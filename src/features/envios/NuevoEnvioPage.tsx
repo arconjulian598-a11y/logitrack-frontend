@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CheckCircle2, Globe2, Loader2, Route as RouteIcon, XCircle } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router';
 import { z } from 'zod';
@@ -19,6 +19,15 @@ import * as api from '@/lib/api/endpoints';
 import { CAUSAS_VIABILIDAD } from '@/lib/dominio';
 import { desdeInputLocal, horas, numero } from '@/lib/format';
 import type { Cliente, RutaMaestra, Ubicacion } from '@/lib/types/api';
+
+function nuevaClave(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  } catch {
+    /* contexto sin crypto: se usa la alternativa */
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
 
 const numeroPositivo = (msg: string) =>
   z
@@ -116,6 +125,11 @@ export default function NuevoEnvioPage() {
     invalida: [['rutasMaestras']],
   });
 
+  // Un solo envío por formulario: el botón se bloquea en el primer clic y la clave hace que el
+  // servidor devuelva el mismo envío si la petición se repite (doble clic, reintento por red lenta).
+  const enviando = useRef(false);
+  const [clave] = useState(nuevaClave);
+
   const crear = useAccion({
     fn: (v: Valores) =>
       api.envios.crear({
@@ -127,7 +141,7 @@ export default function NuevoEnvioPage() {
         tipo_carga: v.tipo_carga,
         es_hazmat: v.es_hazmat,
         fecha_limite_sla: desdeInputLocal(v.fecha_limite_sla),
-      }),
+      }, clave),
     exito: (e) => `Envío ${e.codigo_envio} creado. El sistema está buscando vehículo.`,
     invalida: [['envios'], ['analitica']],
     toastError: false,
@@ -143,7 +157,19 @@ export default function NuevoEnvioPage() {
         migas={[{ etiqueta: 'Envíos', to: '/envios' }, { etiqueta: 'Nuevo envío' }]}
         descripcion="El sistema valida el cliente, calcula la ruta por carretera, comprueba la flota y asigna vehículo y conductor automáticamente."
       />
-      <form onSubmit={handleSubmit((v) => crear.mutate(v))} noValidate className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <form
+        onSubmit={(e) => {
+          void handleSubmit((v) => {
+            if (enviando.current) return;
+            enviando.current = true;
+            crear.mutate(v, {
+              onSettled: () => {
+                enviando.current = false;
+              },
+            });
+          })(e);
+        }}
+        noValidate className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-5">
           <Panel titulo="Cliente">
             <Field label="Cliente" htmlFor="cliente" requerido error={formState.errors.cliente?.message} ayuda="Solo clientes activos. Si no existe, regístrelo en Clientes.">

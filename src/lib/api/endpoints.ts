@@ -75,7 +75,9 @@ export const flota = {
 export const envios = {
   listar: (q: { estado?: string; cliente_id?: string } = {}, o?: S) =>
     http.get<T.Envio[]>('/envios', { ...o, query: q }),
-  crear: (body: T.EnvioCrear) => http.post<T.Envio>('/envios', body),
+  /** `clave`: la misma en reintentos del mismo clic; el servidor nunca crea dos envíos con la misma clave. */
+  crear: (body: T.EnvioCrear, clave?: string) =>
+    http.post<T.Envio>('/envios', body, clave ? { headers: { 'Idempotency-Key': clave } } : undefined),
   porCodigo: (codigo: string, o?: S) => http.get<T.Envio>(`/envios/codigo/${seg(codigo)}`, o),
   obtener: (id: string, o?: S) => http.get<T.Envio>(`/envios/${seg(id)}`, o),
   eventos: (id: string, o?: S) => http.get<T.EnvioEvento[]>(`/envios/${seg(id)}/eventos`, o),

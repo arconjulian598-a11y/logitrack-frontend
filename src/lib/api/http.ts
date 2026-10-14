@@ -11,6 +11,8 @@ export interface Opciones {
   raiz?: boolean;
   /** Tiempo máximo de esta petición (por defecto `config.timeoutMs`). */
   timeoutMs?: number;
+  /** Cabeceras adicionales (por ejemplo `Idempotency-Key`). */
+  headers?: Record<string, string>;
 }
 
 /** Une la cancelación de TanStack Query con un límite de tiempo. */
@@ -62,6 +64,7 @@ export async function solicitar<T>(metodo: string, ruta: string, opts: Opciones 
       headers: {
         Accept: 'application/json',
         ...(tieneCuerpo ? { 'Content-Type': 'application/json' } : {}),
+        ...(opts.headers ?? {}),
       },
       body: tieneCuerpo ? JSON.stringify(opts.body) : undefined,
       credentials: 'omit',

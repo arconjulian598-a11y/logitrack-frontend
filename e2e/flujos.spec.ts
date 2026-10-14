@@ -202,7 +202,8 @@ test('envío en espera: reintento de asignación y devolución con confirmación
   let e: { id: string; codigo_envio: string } | undefined;
   for (let i = 0; i < 4 && !e; i++) {
     const r = await page.request.post(`${API}/envios`, {
-      data: { codigo_cliente: 1000000002, origen_codigo: 'CO-BOG', destino_codigo: 'CO-TUN', peso_kg: 400, tipo_carga: 'refrigerada' },
+      // Peso distinto en cada uno: son pedidos diferentes (el servidor trata un pedido idéntico repetido como doble clic)
+      data: { codigo_cliente: 1000000002, origen_codigo: 'CO-BOG', destino_codigo: 'CO-TUN', peso_kg: 400 + i, tipo_carga: 'refrigerada' },
     });
     expect(r.status()).toBe(201);
     const creado = (await r.json()) as { id: string; codigo_envio: string };
