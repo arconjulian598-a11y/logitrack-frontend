@@ -1,0 +1,257 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/archivo/wdth.css';
+@import 'leaflet/dist/leaflet.css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  Sistema visual LogiTrack
+  - Tinta (navy) para estructura y texto, azul eléctrico para acciones y vehículos en vivo.
+  - Superficies blancas sobre gris niebla frío. Bordes antes que sombras.
+  - Archivo variable: ancho normal para interfaz, condensado para placas, códigos y cifras.
+*/
+:root {
+  --bg: #f3f5f9;
+  --surface: #ffffff;
+  --surface-2: #f8f9fc;
+  --ink: #0e1b33;
+  --text: #0e1b33;
+  --text-2: #4a5873;
+  --text-3: #6b7890;
+  --rule: #dde3ec;
+  --rule-strong: #c6cfdd;
+  --primary: #2a5cff;
+  --primary-hover: #1f4be0;
+  --primary-soft: #e8eeff;
+  --primary-fg: #ffffff;
+  --ok: #12805c;
+  --ok-soft: #e3f4ec;
+  --warn: #a8660c;
+  --warn-soft: #fdf1dc;
+  --danger: #c8322b;
+  --danger-soft: #fce8e6;
+  --info: #0b6e8f;
+  --info-soft: #e1f2f7;
+  --neutral-soft: #edf0f5;
+  --plate: #f5c400;
+  --plate-ink: #111111;
+  --sidebar: #0e1b33;
+  --sidebar-2: #16264a;
+  --sidebar-text: #c9d3e6;
+  --focus: #2a5cff;
+  /* Categórica validada (dataviz validate_palette: claro sobre #fff, oscuro sobre #101c33) */
+  --chart-1: #2a5cff;
+  --chart-2: #c9640f;
+  --chart-3: #7a5af8;
+  --chart-grid: #e4e9f1;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0a1324;
+  --surface: #101c33;
+  --surface-2: #14223d;
+  --text: #e6ebf5;
+  --text-2: #a9b5cc;
+  --text-3: #8592ab;
+  --rule: #22324f;
+  --rule-strong: #2f4266;
+  --primary: #5b82ff;
+  --primary-hover: #7695ff;
+  --primary-soft: #1a2c5c;
+  --primary-fg: #ffffff;
+  --ok: #3cc28f;
+  --ok-soft: #0f3326;
+  --warn: #f0b24a;
+  --warn-soft: #3a2a0d;
+  --danger: #ff6b62;
+  --danger-soft: #431a19;
+  --info: #45b6d8;
+  --info-soft: #0f2f3b;
+  --neutral-soft: #1a2742;
+  --sidebar: #070e1c;
+  --sidebar-2: #12203b;
+  --sidebar-text: #aebad0;
+  --chart-1: #5b82ff;
+  --chart-2: #d27a1f;
+  --chart-3: #9478f0;
+  --chart-grid: #22324f;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: 'Archivo Variable', ui-sans-serif, system-ui, sans-serif;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-fg: var(--primary-fg);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-neutral-soft: var(--neutral-soft);
+  --color-plate: var(--plate);
+  --color-plate-ink: var(--plate-ink);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-2: var(--sidebar-2);
+  --color-sidebar-text: var(--sidebar-text);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'tnum' 0;
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--primary-soft);
+  }
+}
+
+@layer utilities {
+  /* Cifras, códigos y placas: Archivo condensado con numerales tabulares */
+  .font-cond {
+    font-stretch: 78%;
+    font-variation-settings: 'wdth' 78;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------- Leaflet: integración con el tema ---------- */
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: var(--surface-2);
+}
+.dark .leaflet-tile-pane {
+  filter: brightness(0.72) contrast(1.1) saturate(0.6) hue-rotate(185deg) invert(0.92);
+}
+.leaflet-control-zoom a,
+.leaflet-bar a {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--rule) !important;
+}
+.leaflet-control-attribution {
+  background: color-mix(in srgb, var(--surface) 85%, transparent) !important;
+  color: var(--text-2) !important;
+}
+.leaflet-control-attribution a {
+  color: var(--primary) !important;
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgb(14 27 51 / 0.18);
+}
+.leaflet-popup-content {
+  margin: 12px 14px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.lt-marker {
+  background: transparent;
+  border: 0;
+}
+.lt-marker:focus-visible {
+  outline: none;
+}
+.lt-marker:focus-visible .lt-pin {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.lt-pin {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgb(14 27 51 / 0.45);
+  transition: transform 160ms ease;
+}
+.lt-pin svg {
+  width: 14px;
+  height: 14px;
+}
+.lt-pin.is-historica {
+  border-style: dashed;
+  box-shadow: none;
+  opacity: 0.92;
+}
+.lt-pin.is-selected {
+  transform: scale(1.28);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--primary) 35%, transparent),
+    0 1px 4px rgb(14 27 51 / 0.45);
+}
+.lt-pin-label {
+  position: absolute;
+  left: 50%;
+  top: 28px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-stretch: 78%;
+  letter-spacing: 0.02em;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--plate);
+  color: var(--plate-ink);
+  border: 1px solid #111;
+  line-height: 14px;
+}
+.lt-stop {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--text-3);
+}
