@@ -52,6 +52,20 @@ async function leerCuerpo(resp: Response): Promise<unknown> {
   try {
     return JSON.parse(texto) as unknown;
   } catch {
+    if (!resp.ok) {
+      // Página de error en HTML (Render o Vercel cuando un servicio está dormido o caído): no se muestra el HTML
+      const servicio = resp.headers.get('X-Gateway-Servicio') ?? undefined;
+      return {
+        detail: {
+          codigo: resp.status >= 500 ? 'SERVICIO_NO_DISPONIBLE' : 'RESPUESTA_INESPERADA',
+          mensaje:
+            resp.status >= 500
+              ? `El servicio ${servicio ?? 'del backend'} no respondió (error ${resp.status}). Si el sistema estaba dormido, tarda cerca de un minuto en despertar: intente de nuevo.`
+              : `El servidor respondió un error ${resp.status} inesperado.`,
+          ...(servicio ? { servicio } : {}),
+        },
+      };
+    }
     return { detail: texto.slice(0, 300) };
   }
 }

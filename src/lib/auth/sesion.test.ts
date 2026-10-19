@@ -76,3 +76,16 @@ describe('sesión y cliente HTTP', () => {
     expect(f).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('respuestas de error en HTML', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it('una página 502 en HTML se convierte en un mensaje claro (sin mostrar HTML)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('<!DOCTYPE html><html><title>502</title></html>', { status: 502, headers: { 'X-Gateway-Servicio': 'shipment' } }),
+    );
+    const e = (await solicitar('POST', '/auth/login', { body: {}, publica: true }).catch((x: unknown) => x)) as { codigo?: string; message: string };
+    expect(e.codigo).toBe('SERVICIO_NO_DISPONIBLE');
+    expect(e.message).toContain('shipment');
+    expect(e.message).not.toContain('<');
+  });
+});
