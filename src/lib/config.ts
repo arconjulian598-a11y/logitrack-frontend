@@ -58,7 +58,16 @@ function gatewayDelNavegador(): string | null {
   return normalizarGateway(leerAlmacen());
 }
 
-const gatewayEnv = texto(env.VITE_GATEWAY_URL, 'http://localhost:8002');
+/**
+ * `VITE_GATEWAY_URL=/` significa «este mismo sitio»: en Vercel, `vercel.json` reenvía `/api/v1/*`
+ * al gateway de Render, así el navegador no necesita permiso CORS del gateway.
+ */
+function resolverGateway(v: string): string {
+  if (v === '' || v === '/') return typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8002';
+  return v;
+}
+
+const gatewayEnv = resolverGateway(env.VITE_GATEWAY_URL?.trim() === '/' ? '/' : texto(env.VITE_GATEWAY_URL, 'http://localhost:8002'));
 const apiEnv = texto(env.VITE_API_BASE_URL, `${gatewayEnv}/api/v1`);
 const elegido = gatewayDelNavegador();
 
@@ -81,6 +90,8 @@ export const config = {
   apiBaseUrl: elegido ? `${elegido}/api/v1` : apiEnv,
   /** Raíz del gateway, para `/health`, `/docs` y `/openapi.json`. */
   gatewayUrl: elegido ?? gatewayEnv,
+  /** Gateway real al que se llega (para mostrarlo; en Vercel el sitio lo reenvía a Render). */
+  gatewayDestino: elegido ?? texto(env.VITE_GATEWAY_DESTINO, gatewayEnv),
   /** Gateway de la compilación (variables VITE_*), para poder volver a él. */
   gatewayPorDefecto: gatewayEnv,
   /** true si el gateway viene de `?api=` o del navegador y no de la compilación. */

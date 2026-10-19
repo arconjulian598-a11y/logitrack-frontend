@@ -4,20 +4,16 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
+    { "source": "/api/v1/:ruta*", "destination": "https://logitrack-gateway.onrender.com/api/v1/:ruta*" },
+    { "source": "/health", "destination": "https://logitrack-gateway.onrender.com/health" },
+    { "source": "/docs", "destination": "https://logitrack-gateway.onrender.com/docs" },
+    { "source": "/openapi.json", "destination": "https://logitrack-gateway.onrender.com/openapi.json" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
     {
       "source": "/assets/(.*)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        }
-      ]
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
     }
   ]
 }

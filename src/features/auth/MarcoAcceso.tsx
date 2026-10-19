@@ -5,9 +5,9 @@ import { config } from '@/lib/config';
 export function MarcoAcceso({ children, ancho = 'max-w-[400px]' }: { children: ReactNode; ancho?: string }) {
   const host = (() => {
     try {
-      return new URL(config.gatewayUrl).host;
+      return new URL(config.gatewayDestino).host;
     } catch {
-      return config.gatewayUrl;
+      return config.gatewayDestino;
     }
   })();
   return (
