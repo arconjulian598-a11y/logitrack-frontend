@@ -252,7 +252,8 @@ async def crear_usuario(request: Request):
         return JSONResponse(status_code=409, content={"detail": "Ya existe una cuenta con ese correo"})
     if len(b.get("password") or "") < 8:
         return JSONResponse(status_code=422, content={"detail": [{"loc": ["body", "password"], "msg": "String should have at least 8 characters"}]})
-    cliente = E["clientes"].get(b.get("cliente_id") or "")
+    cliente = E["clientes"].get(b.get("cliente_id") or "") or next(
+        (c for c in E["clientes"].values() if b.get("codigo_cliente") is not None and c["codigo_cliente"] == b.get("codigo_cliente")), None)
     if b.get("rol") == C and not cliente:
         return JSONResponse(status_code=422, content={"detail": "Una cuenta de cliente necesita cliente_id o codigo_cliente"})
     uid = str(uuid.uuid4())

@@ -1,13 +1,13 @@
 import { Loader2, LogIn } from 'lucide-react';
 import { useState, useSyncExternalStore, type FormEvent } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { esErrorDeCredenciales, useAuth, useSesion } from '@/app/auth';
 import { ErrorFormulario, Field } from '@/components/shared/Form';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { sistemaDespertando, suscribirArranque } from '@/lib/api/arranque';
 import { motivoCierre } from '@/lib/auth/sesion';
-import { config } from '@/lib/config';
+import { MarcoAcceso } from './MarcoAcceso';
 
 function destinoSeguro(volver: string | null): string {
   // Solo rutas internas: nunca se redirige a otro sitio
@@ -19,7 +19,7 @@ export default function LoginPage() {
   const { entrar } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => params.get('email') ?? '');
   const [password, setPassword] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -50,30 +50,17 @@ export default function LoginPage() {
     }
   }
 
-  const host = (() => {
-    try {
-      return new URL(config.gatewayUrl).host;
-    } catch {
-      return config.gatewayUrl;
-    }
-  })();
-
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-sidebar px-4 py-10">
-      <div className="w-full max-w-[400px]">
-        <div className="mb-6 flex items-center justify-center gap-2.5">
-          <svg viewBox="0 0 32 32" className="size-9" aria-hidden>
-            <rect width="32" height="32" rx="7" fill="#fff" fillOpacity="0.08" />
-            <path d="M7 21.5h3.2V10.5H7zM12.6 21.5h8.6v-2.7h-5.4v-8.3h-3.2z" fill="#fff" />
-            <circle cx="24" cy="12" r="3" fill="#5b82ff" />
-          </svg>
-          <span className="font-cond text-2xl font-bold tracking-wide text-white">LogiTrack</span>
-        </div>
-
+    <MarcoAcceso>
         <form onSubmit={onSubmit} className="rounded-lg border border-rule bg-surface p-6 shadow-lg" noValidate>
           <h1 className="text-lg font-semibold text-text">Iniciar sesión</h1>
           <p className="mt-1 text-[13px] text-text-2">Use la cuenta que le asignó el administrador.</p>
 
+          {motivo === 'salida' && !error && (
+            <p role="status" className="mt-4 rounded-md border border-rule bg-surface-2 px-3 py-2 text-[13px] text-text-2">
+              Sesión cerrada. Puede entrar con otra cuenta (otro rol).
+            </p>
+          )}
           {motivo === 'expirada' && !error && (
             <p role="status" className="mt-4 rounded-md border border-warn/30 bg-warn-soft px-3 py-2 text-[13px] text-text">
               Su sesión terminó. Inicie sesión de nuevo para continuar.
@@ -134,12 +121,13 @@ export default function LoginPage() {
           >
             {!enviando && <LogIn />} Entrar
           </Button>
-          <p className="mt-4 text-center text-xs text-text-3">
-            ¿No tiene cuenta? Pídasela al administrador del sistema.
-          </p>
+          <div className="mt-5 flex items-center justify-center gap-1.5 border-t border-rule pt-4 text-[13px] text-text-2">
+            ¿No tiene cuenta?
+            <Button variant="link" asChild>
+              <Link to="/registro">Registrarse</Link>
+            </Button>
+          </div>
         </form>
-        <p className="mt-4 text-center text-[11.5px] text-sidebar-text/60">Servidor: {host}</p>
-      </div>
-    </div>
+    </MarcoAcceso>
   );
 }

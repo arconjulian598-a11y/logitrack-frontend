@@ -159,10 +159,29 @@ function MenuUsuario() {
           <UserRound /> Mi cuenta
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={salir}>
-          <LogOut /> Cerrar sesión
+          <LogOut /> Cerrar sesión (entrar con otra cuenta)
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** Pie del menú lateral: quién entró y cómo salir (para entrar con otra cuenta u otro rol). */
+function SalidaLateral() {
+  const usuario = useUsuario();
+  const { salir } = useAuth();
+  return (
+    <div className="border-t border-white/10 px-3 py-3">
+      <p className="truncate px-2 text-[13px] font-semibold text-white">{usuario.nombre}</p>
+      <p className="truncate px-2 text-[11.5px] text-sidebar-text/70">{NOMBRE_ROL[usuario.rol]}</p>
+      <button
+        type="button"
+        onClick={salir}
+        className="mt-2 flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-[13.5px] font-medium text-sidebar-text transition-colors hover:bg-sidebar-2 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+      >
+        <LogOut className="size-[17px]" aria-hidden /> Cerrar sesión
+      </button>
+    </div>
   );
 }
 
@@ -201,6 +220,7 @@ export function AppLayout() {
           <Logo />
         </div>
         <Navegacion />
+        <SalidaLateral />
       </aside>
 
       <Dialog.Root open={menu} onOpenChange={setMenu}>
@@ -216,6 +236,7 @@ export function AppLayout() {
               </Dialog.Close>
             </div>
             <Navegacion onNavegar={() => setMenu(false)} />
+            <SalidaLateral />
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>

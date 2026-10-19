@@ -61,9 +61,9 @@ describe('reglas del dominio', () => {
 });
 
 describe('capa de API', () => {
-  it('expone las 83 rutas de la primera versión más las 21 de la fase 2', () => {
+  it('expone las 83 rutas de la primera versión más las de la fase 2 (y el registro autorizado)', () => {
     const total = Object.values(endpoints).reduce((n, grupo) => n + Object.keys(grupo).length, 0);
-    expect(total).toBe(104);
+    expect(total).toBe(105);
   });
   it('construye URLs con la base configurada y omite parámetros vacíos', () => {
     expect(construirUrl('/envios', { estado: 'en_transito', cliente_id: '' })).toBe('http://localhost:8002/api/v1/envios?estado=en_transito');

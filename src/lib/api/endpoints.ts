@@ -31,6 +31,9 @@ export const usuarios = {
   listar: (q: { rol?: string; limite?: number } = {}, o?: S) => http.get<T.Usuario[]>('/usuarios', { ...o, query: q }),
   crear: (body: T.UsuarioCrear) => http.post<T.Usuario>('/usuarios', body),
   actualizar: (id: string, body: T.UsuarioActualizar) => http.patch<T.Usuario>(`/usuarios/${seg(id)}`, body),
+  /** Registro autorizado por un administrador: usa SU token (de un solo uso) y no la sesión abierta. */
+  crearConAutorizacion: (body: T.UsuarioCrear, tokenAdministrador: string) =>
+    http.post<T.Usuario>('/usuarios', body, { publica: true, headers: { Authorization: `Bearer ${tokenAdministrador}` } }),
 };
 
 // ---------- Shipment · Clientes ----------

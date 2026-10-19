@@ -29,6 +29,7 @@ function Inicio({ Panel }: { Panel: ComponentType }) {
 
 export const router = createBrowserRouter([
   { path: '/login', lazy: pagina(() => import('@/features/auth/LoginPage')) },
+  { path: '/registro', lazy: pagina(() => import('@/features/auth/RegistroPage')) },
   {
     path: '/',
     element: (

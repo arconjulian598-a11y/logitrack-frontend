@@ -15,7 +15,7 @@ test.describe('inicio de sesión', () => {
     const v = vigilar(page);
     await page.goto('/envios');
     await expect(page).toHaveURL(/\/login\?volver=%2Fenvios/);
-    await expect(page.getByText(/crear cuenta|registrarse/i)).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Registrarse' })).toBeVisible();
 
     await page.getByLabel('Correo').fill(CUENTAS.operador.email);
     await page.getByLabel('Contraseña').fill('equivocada');
@@ -303,6 +303,66 @@ test.describe('usuarios', () => {
     await expect(page.getByText('No tiene permiso para ver esta sección')).toBeVisible();
     await page.goto('/envios');
     await expect(page.getByRole('heading', { name: 'Envíos' })).toBeVisible();
+  });
+});
+
+test.describe('registro y cambio de cuenta', () => {
+  test('registrarse con autorización del administrador y entrar con la cuenta nueva', async ({ page }) => {
+    const v = vigilar(page);
+    await page.goto('/login');
+    await page.getByRole('link', { name: 'Registrarse' }).click();
+    await expect(page).toHaveURL(/\/registro$/);
+    await page.locator('#r-nombre').fill('Pedro Despachos');
+    await page.locator('#r-email').fill('pedro@frutas.test');
+    await page.locator('#r-password').fill('clave-pedro-1');
+    await page.locator('#r-confirmar').fill('clave-pedro-1');
+    await page.locator('#r-codigo').fill('1000000002');
+
+    // Sin autorización válida no se crea
+    await page.locator('#r-admin-email').fill(CUENTAS.operador.email);
+    await page.locator('#r-admin-password').fill(CUENTAS.operador.password);
+    await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
+    await expect(page.getByText('Esa cuenta no es de administrador: no puede autorizar registros.')).toBeVisible();
+    await page.locator('#r-admin-email').fill(CUENTAS.administrador.email);
+    await page.locator('#r-admin-password').fill('equivocada');
+    await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
+    await expect(page.getByText('Correo o contraseña del administrador incorrectos.')).toBeVisible();
+
+    await page.locator('#r-admin-password').fill(CUENTAS.administrador.password);
+    await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
+    await expect(page.getByRole('heading', { name: 'Mis envíos' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Cuenta de Pedro Despachos/ })).toBeVisible();
+    // La sesión del administrador no quedó guardada: la abierta es la de Pedro
+    expect(await page.evaluate(() => sessionStorage.getItem('logitrack_sesion'))).toContain('pedro@frutas.test');
+
+    // Mismo correo otra vez: ya existe
+    await page.getByRole('button', { name: 'Cerrar sesión', exact: true }).click();
+    await page.goto('/registro');
+    await page.locator('#r-nombre').fill('Pedro Otra Vez');
+    await page.locator('#r-email').fill('pedro@frutas.test');
+    await page.locator('#r-password').fill('clave-pedro-1');
+    await page.locator('#r-confirmar').fill('clave-pedro-1');
+    await page.locator('#r-rol').selectOption('operador');
+    await page.locator('#r-admin-email').fill(CUENTAS.administrador.email);
+    await page.locator('#r-admin-password').fill(CUENTAS.administrador.password);
+    await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
+    await expect(page.getByText('Ya existe una cuenta con ese correo.')).toBeVisible();
+    await v.verificar();
+  });
+
+  test('cerrar sesión desde el menú lateral y entrar con otro rol', async ({ page }) => {
+    await entrarComo(page, 'cliente');
+    await page.goto('/envios');
+    await expect(page.getByRole('heading', { name: 'Mis envíos' })).toBeVisible();
+    await page.evaluate(() => sessionStorage.clear()); // que el script de la prueba no vuelva a poner la sesión
+    await page.getByRole('button', { name: 'Cerrar sesión', exact: true }).click();
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByText('Sesión cerrada. Puede entrar con otra cuenta (otro rol).')).toBeVisible();
+    await page.getByLabel('Correo').fill(CUENTAS.gestor_flota.email);
+    await page.getByLabel('Contraseña').fill(CUENTAS.gestor_flota.password);
+    await page.getByRole('button', { name: 'Entrar' }).click();
+    await expect(page.getByRole('navigation', { name: 'Principal' }).getByRole('link', { name: 'Dashboard de flota' })).toBeVisible();
+    await expect(page.getByText('Gestor de flota').first()).toBeVisible();
   });
 });
 

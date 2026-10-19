@@ -172,7 +172,9 @@ React 19 · TypeScript 6 (estricto) · Vite 8 · Tailwind CSS 4 · componentes a
 
 ## Fase 2: inicio de sesión, roles y cobro
 
-- La aplicación exige iniciar sesión (`POST /auth/login`). El token vive en `sessionStorage` (nunca en `localStorage` ni en la URL); un 401 vuelve al inicio de sesión y un 403 muestra «sin permiso» sin cerrar la sesión.
+- La aplicación exige iniciar sesión (`POST /auth/login`). «Cerrar sesión» está en el menú lateral y en el menú de la cuenta, para entrar con otra cuenta u otro rol.
+- «Registrarse» (`/registro`): el backend no tiene registro público, así que un administrador autoriza el alta escribiendo su correo y contraseña en el mismo formulario; su sesión se usa solo para `POST /usuarios` y no se guarda.
+- El token vive en `sessionStorage` (nunca en `localStorage` ni en la URL); un 401 vuelve al inicio de sesión y un 403 muestra «sin permiso» sin cerrar la sesión.
 - Menús y pantallas por rol (`cliente`, `operador`, `gestor_flota`, `administrador`) según la matriz de `src/lib/auth/permisos.ts` (copia de la sección 9.2 del contrato; el gateway es quien decide).
 - Crear un envío es en dos pasos: cotizar (`POST /envios/cotizar`) y aceptar el precio (`POST /envios` con `monto_aceptado_cop`). Incluye carga divisible (pedidos con partes) y fecha programada.
 - Pantallas nuevas: Calendario (programados), Cobros y reembolsos, Usuarios, Mi cuenta, e Ingresos en el dashboard.
