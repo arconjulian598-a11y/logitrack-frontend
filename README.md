@@ -169,3 +169,17 @@ Ver la sección completa en [`COBERTURA.md`](./COBERTURA.md#4-limitaciones-y-hal
 ## 10. Stack
 
 React 19 · TypeScript 6 (estricto) · Vite 8 · Tailwind CSS 4 · componentes al estilo shadcn/ui sobre Radix UI · Lucide · React Router 7 · TanStack Query 5 · React Hook Form + Zod 4 · Recharts 3 · Leaflet + react-leaflet 5 con OpenStreetMap · Sonner · Vitest · Playwright. Tipografía Archivo (variable, autoalojada).
+
+## Fase 2: inicio de sesión, roles y cobro
+
+- La aplicación exige iniciar sesión (`POST /auth/login`). El token vive en `sessionStorage` (nunca en `localStorage` ni en la URL); un 401 vuelve al inicio de sesión y un 403 muestra «sin permiso» sin cerrar la sesión.
+- Menús y pantallas por rol (`cliente`, `operador`, `gestor_flota`, `administrador`) según la matriz de `src/lib/auth/permisos.ts` (copia de la sección 9.2 del contrato; el gateway es quien decide).
+- Crear un envío es en dos pasos: cotizar (`POST /envios/cotizar`) y aceptar el precio (`POST /envios` con `monto_aceptado_cop`). Incluye carga divisible (pedidos con partes) y fecha programada.
+- Pantallas nuevas: Calendario (programados), Cobros y reembolsos, Usuarios, Mi cuenta, e Ingresos en el dashboard.
+- En producción el gateway es `https://logitrack-gateway.onrender.com` (`.env.production`). Si Render está dormido, las lecturas se reintentan a los 3, 6 y 12 s mostrando «el sistema se está iniciando».
+
+Pruebas de la fase 2 contra un gateway simulado (no necesitan el backend):
+
+```bash
+MOCK_PYTHON=python3 npm run test:e2e:fase2   # requiere fastapi y uvicorn
+```

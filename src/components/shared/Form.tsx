@@ -81,6 +81,7 @@ export function ConfirmDialog({
   onConfirmar,
   cargando,
   peligro,
+  volver = 'Cancelar',
 }: {
   abierto: boolean;
   onAbierto: (v: boolean) => void;
@@ -90,6 +91,8 @@ export function ConfirmDialog({
   onConfirmar: () => void;
   cargando?: boolean;
   peligro?: boolean;
+  /** Texto del botón que cierra sin hacer nada. */
+  volver?: string;
 }) {
   return (
     <Dialog open={abierto} onOpenChange={onAbierto}>
@@ -98,7 +101,7 @@ export function ConfirmDialog({
           {children}
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="ghost" onClick={() => onAbierto(false)} disabled={cargando}>
-              Cancelar
+              {volver}
             </Button>
             <Button variant={peligro ? 'danger' : 'primary'} onClick={onConfirmar} cargando={cargando}>
               {confirmar}

@@ -1,16 +1,19 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { Menu, Monitor, Moon, Sun, X } from 'lucide-react';
-import { Suspense, useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router';
+import { Loader2, LogOut, Menu, Monitor, Moon, Sun, UserRound, X } from 'lucide-react';
+import { Suspense, useEffect, useState, useSyncExternalStore } from 'react';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { LoadingState } from '@/components/shared/States';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown';
+import { sistemaDespertando, suscribirArranque } from '@/lib/api/arranque';
+import { NOMBRE_ROL, puede } from '@/lib/auth/permisos';
 import { Tooltip } from '@/components/ui/misc';
 import { useEstadoSistema } from '@/hooks/queries';
 import { useTema } from '@/hooks/useTema';
 import { cn } from '@/lib/utils';
+import { useAuth, useRol, useUsuario } from './auth';
 import { BuscadorGlobal } from './BuscadorGlobal';
-import { NAVEGACION } from './nav';
+import { moduloActivo, navegacionPara } from './nav';
 
 function Logo() {
   return (
@@ -26,11 +29,16 @@ function Logo() {
 }
 
 function Navegacion({ onNavegar }: { onNavegar?: () => void }) {
-  const estado = useEstadoSistema();
-  const servicios = estado.data?.servicios ?? {};
+  const rol = useRol();
+  const { pathname } = useLocation();
+  const esAdmin = puede(rol, 'administrar');
+  const estado = useEstadoSistema({ enabled: esAdmin });
+  const servicios = esAdmin ? (estado.data?.servicios ?? {}) : {};
+  const grupos = navegacionPara(rol);
+  const todos = grupos.flatMap((g) => g.items.map((i) => i.to));
   return (
     <nav aria-label="Principal" className="scrollbar-thin flex-1 overflow-y-auto px-3 pb-4">
-      {NAVEGACION.map((g) => (
+      {grupos.map((g) => (
         <div key={g.grupo} className="mt-5 first:mt-3">
           <p className="px-2.5 pb-1.5 text-[11.5px] font-semibold text-sidebar-text/60">{g.grupo}</p>
           <ul className="space-y-0.5">
@@ -41,14 +49,13 @@ function Navegacion({ onNavegar }: { onNavegar?: () => void }) {
                 <li key={it.to}>
                   <NavLink
                     to={it.to}
-                    end={it.to === '/'}
+                    end
                     onClick={onNavegar}
-                    className={({ isActive }) =>
-                      cn(
-                        'group flex h-9 items-center gap-2.5 rounded-md px-2.5 text-[13.5px] font-medium text-sidebar-text transition-colors hover:bg-sidebar-2 hover:text-white',
-                        isActive && 'bg-sidebar-2 text-white shadow-[inset_3px_0_0_var(--primary)]',
-                      )
-                    }
+                    aria-current={moduloActivo(it.to, pathname, todos) ? 'page' : undefined}
+                    className={cn(
+                      'group flex h-9 items-center gap-2.5 rounded-md px-2.5 text-[13.5px] font-medium text-sidebar-text transition-colors hover:bg-sidebar-2 hover:text-white',
+                      moduloActivo(it.to, pathname, todos) && 'bg-sidebar-2 text-white shadow-[inset_3px_0_0_var(--primary)]',
+                    )}
                   >
                     <it.icono className="size-[17px] shrink-0 opacity-80" aria-hidden />
                     <span className="flex-1 truncate">{it.etiqueta}</span>
@@ -120,10 +127,62 @@ function SelectorTema() {
   );
 }
 
+function MenuUsuario() {
+  const usuario = useUsuario();
+  const { salir } = useAuth();
+  const navigate = useNavigate();
+  const iniciales = usuario.nombre
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join('');
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className="gap-2 px-1.5" aria-label={`Cuenta de ${usuario.nombre}`}>
+          <span className="flex size-7 items-center justify-center rounded-full bg-primary-soft text-[11.5px] font-bold text-primary">
+            {iniciales || <UserRound />}
+          </span>
+          <span className="hidden max-w-36 flex-col items-start leading-tight md:flex">
+            <span className="max-w-36 truncate text-[12.5px] font-semibold text-text">{usuario.nombre}</span>
+            <span className="text-[11px] font-medium text-text-3">{NOMBRE_ROL[usuario.rol]}</span>
+          </span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="min-w-52">
+        <div className="px-2 py-1.5">
+          <p className="truncate text-[13px] font-semibold text-text">{usuario.nombre}</p>
+          <p className="truncate text-xs text-text-3">{usuario.email}</p>
+        </div>
+        <DropdownMenuItem onSelect={() => navigate('/cuenta')}>
+          <UserRound /> Mi cuenta
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={salir}>
+          <LogOut /> Cerrar sesión
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** Aviso mientras el backend desplegado despierta (los servicios se duermen tras 15 min sin uso). */
+function AvisoArranque() {
+  const despertando = useSyncExternalStore(suscribirArranque, sistemaDespertando, sistemaDespertando);
+  if (!despertando) return null;
+  return (
+    <div role="status" className="flex items-center justify-center gap-2 border-b border-warn/30 bg-warn-soft px-4 py-2 text-[13px] text-text">
+      <Loader2 className="size-4 animate-spin text-warn" aria-hidden />
+      El sistema se está iniciando; puede tardar cerca de un minuto. Reintentando…
+    </div>
+  );
+}
+
 export function AppLayout() {
   const [menu, setMenu] = useState(false);
   const { pathname } = useLocation();
   const pantallaCompleta = pathname === '/mapa';
+  const esAdmin = puede(useRol(), 'administrar');
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -142,9 +201,6 @@ export function AppLayout() {
           <Logo />
         </div>
         <Navegacion />
-        <p className="border-t border-white/10 px-5 py-3 text-[11px] leading-snug text-sidebar-text/60">
-          Sin autenticación: el backend aún no la exige. Cualquier usuario con acceso al gateway puede operar.
-        </p>
       </aside>
 
       <Dialog.Root open={menu} onOpenChange={setMenu}>
@@ -171,10 +227,12 @@ export function AppLayout() {
           </Button>
           <BuscadorGlobal />
           <div className="ml-auto flex items-center gap-1.5">
-            <SaludSistema />
+            {esAdmin && <SaludSistema />}
             <SelectorTema />
+            <MenuUsuario />
           </div>
         </header>
+        <AvisoArranque />
         <main
           id="contenido"
           tabIndex={-1}

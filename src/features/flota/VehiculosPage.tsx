@@ -1,3 +1,4 @@
+import { usePuede } from '@/app/auth';
 import { ClipboardCheck, Map as MapIcon, Plus, Search, ShieldAlert, Snowflake } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -19,6 +20,7 @@ import { DialogoViabilidad } from './Viabilidad';
 const CLAVES = ['q', 'estado', 'tipo', 'capacidad'] as const;
 
 export default function VehiculosPage() {
+  const editaFlota = usePuede('editarFlota');
   const { valores, set, limpiar } = useFiltrosUrl(CLAVES);
   const vehiculos = useVehiculos();
   const conductores = useConductores();
@@ -100,9 +102,11 @@ export default function VehiculosPage() {
                 <MapIcon /> Ver en el mapa
               </Link>
             </Button>
-            <Button variant="primary" onClick={() => setNuevo(true)}>
-              <Plus /> Registrar vehículo
-            </Button>
+            {editaFlota && (
+              <Button variant="primary" onClick={() => setNuevo(true)}>
+                <Plus /> Registrar vehículo
+              </Button>
+            )}
           </>
         }
       />

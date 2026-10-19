@@ -1,3 +1,4 @@
+import { usePuede } from '@/app/auth';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { LatLngBoundsExpression } from 'leaflet';
 import { MapPin, Plus, Search } from 'lucide-react';
@@ -189,6 +190,7 @@ function EditarUbicacion({ u }: { u: Ubicacion }) {
 }
 
 function FichaUbicacion({ id }: { id: string }) {
+  const edita = usePuede('editarUbicaciones');
   const u = useUbicacion(id);
   if (u.error) return <ErrorState error={u.error} />;
   if (!u.data) return <LoadingState />;
@@ -208,12 +210,13 @@ function FichaUbicacion({ id }: { id: string }) {
           <CircleMarker center={[x.latitud, x.longitud]} radius={8} pathOptions={{ color: '#fff', weight: 2, fillColor: '#2a5cff', fillOpacity: 1 }} />
         </BaseMap>
       </div>
-      <EditarUbicacion key={`${x.id}-${x.departamento}-${x.tipo}-${x.activo}`} u={x} />
+      {edita && <EditarUbicacion key={`${x.id}-${x.departamento}-${x.tipo}-${x.activo}`} u={x} />}
     </div>
   );
 }
 
 export default function UbicacionesPage() {
+  const edita = usePuede('editarUbicaciones');
   const { valores, set } = useFiltrosUrl(['q', 'pais', 'tipo', 'inactivas'] as const);
   const [params, setParams] = useSearchParams();
   const sel = params.get('sel');
@@ -247,9 +250,11 @@ export default function UbicacionesPage() {
         titulo="Ubicaciones"
         descripcion="Catálogo de lugares (Colombia y capitales de Sudamérica) que se usan como origen, destino y paradas."
         acciones={
-          <Button variant="primary" onClick={() => setNueva(true)}>
-            <Plus /> Agregar ubicación
-          </Button>
+          edita && (
+            <Button variant="primary" onClick={() => setNueva(true)}>
+              <Plus /> Agregar ubicación
+            </Button>
+          )
         }
       />
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">

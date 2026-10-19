@@ -1,4 +1,4 @@
-import { Globe2, PackagePlus, RefreshCw, Search, Skull, Snowflake } from 'lucide-react';
+import { CalendarClock, Globe2, PackagePlus, RefreshCw, Search, Skull, Snowflake, Split } from 'lucide-react';
 import { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { EstadoBadge, Tag } from '@/components/shared/Badge';
@@ -7,10 +7,11 @@ import { Codigo, PageHeader, Panel } from '@/components/shared/Layout';
 import { Plate } from '@/components/shared/Plate';
 import { Button } from '@/components/ui/button';
 import { Input, NativeSelect } from '@/components/ui/input';
+import { usePuede } from '@/app/auth';
 import { useClientes, useEnvios } from '@/hooks/queries';
 import { useFiltrosUrl } from '@/hooks/useFiltrosUrl';
 import { ESTADOS_ENVIO, ESTADOS_ENVIO_LISTA, estadoEnvio } from '@/lib/dominio';
-import { fechaHora, hora, num, numero, relativo } from '@/lib/format';
+import { fechaHora, hora, num, numero, pesos, relativo } from '@/lib/format';
 import type { Envio } from '@/lib/types/api';
 import { cn, coincide } from '@/lib/utils';
 
@@ -36,12 +37,37 @@ export function EtiquetasCarga({ e }: { e: Pick<Envio, 'tipo_carga' | 'es_hazmat
   );
 }
 
+/** Partes de un pedido dividido («2 de 3 entregadas») o la fecha de un envío programado. */
+export function DetallePedido({ e }: { e: Envio }) {
+  if ((e.partes_total ?? 0) > 0)
+    return (
+      <Tag tono="neutral" icono={<Split />}>
+        {e.partes_entregadas ?? 0} de {e.partes_total} partes
+      </Tag>
+    );
+  if (e.estado === 'programado' && e.fecha_programada)
+    return (
+      <Tag tono="info" icono={<CalendarClock />}>
+        {fechaHora(e.fecha_programada)}
+      </Tag>
+    );
+  return null;
+}
+
 const CLAVES = ['estado', 'cliente', 'q'] as const;
 
 export default function EnviosPage() {
   const { valores, set, limpiar } = useFiltrosUrl(CLAVES);
-  const envios = useEnvios({ estado: valores.estado || undefined, cliente_id: valores.cliente || undefined });
-  const clientes = useClientes({ limite: 200 });
+  const eligeCliente = usePuede('elegirCliente');
+  const puedeCrear = usePuede('crearEnvio');
+  const esCliente = !usePuede('operarEnvio') && !eligeCliente;
+  // solo_pedidos: un pedido dividido aparece una vez (sus partes se ven en el detalle)
+  const envios = useEnvios({
+    estado: valores.estado || undefined,
+    cliente_id: (eligeCliente && valores.cliente) || undefined,
+    solo_pedidos: true,
+  });
+  const clientes = useClientes({ limite: 200 }, { enabled: eligeCliente });
   const navigate = useNavigate();
   const nombreCliente = useMemo(() => new Map((clientes.data ?? []).map((c) => [c.id, c.nombre])), [clientes.data]);
 
@@ -57,7 +83,14 @@ export default function EnviosPage() {
     {
       id: 'codigo',
       titulo: 'Envío',
-      celda: (e) => <Codigo>{e.codigo_envio}</Codigo>,
+      celda: (e) => (
+        <div className="space-y-1">
+          <Codigo>{e.codigo_envio}</Codigo>
+          <div>
+            <DetallePedido e={e} />
+          </div>
+        </div>
+      ),
       orden: (e) => e.codigo_envio,
     },
     {
@@ -113,6 +146,13 @@ export default function EnviosPage() {
       ocultarBajo: 'sm',
     },
     {
+      id: 'monto',
+      titulo: 'Precio',
+      celda: (e) => <span className="tabular">{e.monto_cop != null ? pesos(e.monto_cop) : '—'}</span>,
+      orden: (e) => num(e.monto_cop),
+      ocultarBajo: 'xl',
+    },
+    {
       id: 'eta',
       titulo: 'Llegada estimada',
       celda: (e) => (e.hora_estimada_llegada ? <span title={fechaHora(e.hora_estimada_llegada)}>{hora(e.hora_estimada_llegada)}</span> : '—'),
@@ -131,18 +171,24 @@ export default function EnviosPage() {
   return (
     <>
       <PageHeader
-        titulo="Envíos"
-        descripcion="Al crear un envío el sistema reserva vehículo y conductor, arranca el viaje y lo entrega solo. La lista se actualiza cada 10 segundos."
+        titulo={esCliente ? 'Mis envíos' : 'Envíos'}
+        descripcion={
+          esCliente
+            ? 'Sus pedidos y en qué van. El sistema asigna vehículo y conductor solo. La lista se actualiza cada 10 segundos.'
+            : 'Al crear un envío el sistema reserva vehículo y conductor, arranca el viaje y lo entrega solo. La lista se actualiza cada 10 segundos.'
+        }
         acciones={
           <>
             <Button onClick={() => envios.refetch()} aria-label="Actualizar lista">
               <RefreshCw className={cn(envios.isFetching && 'animate-spin')} /> Actualizar
             </Button>
-            <Button variant="primary" asChild>
-              <Link to="/envios/nuevo">
-                <PackagePlus /> Nuevo envío
-              </Link>
-            </Button>
+            {puedeCrear && (
+              <Button variant="primary" asChild>
+                <Link to="/envios/nuevo">
+                  <PackagePlus /> Nuevo envío
+                </Link>
+              </Button>
+            )}
           </>
         }
       />
@@ -153,7 +199,7 @@ export default function EnviosPage() {
             <Input
               value={valores.q}
               onChange={(e) => set('q', e.target.value)}
-              placeholder="Código, ciudad, placa, conductor o cliente"
+              placeholder={eligeCliente ? 'Código, ciudad, placa, conductor o cliente' : 'Código, ciudad, placa o conductor'}
               aria-label="Buscar en los envíos"
               className="pl-8"
             />
@@ -166,14 +212,16 @@ export default function EnviosPage() {
               </option>
             ))}
           </NativeSelect>
-          <NativeSelect value={valores.cliente} onChange={(e) => set('cliente', e.target.value)} className="w-56" aria-label="Filtrar por cliente">
-            <option value="">Todos los clientes</option>
-            {(clientes.data ?? []).map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nombre}
-              </option>
-            ))}
-          </NativeSelect>
+          {eligeCliente && (
+            <NativeSelect value={valores.cliente} onChange={(e) => set('cliente', e.target.value)} className="w-56" aria-label="Filtrar por cliente">
+              <option value="">Todos los clientes</option>
+              {(clientes.data ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre}
+                </option>
+              ))}
+            </NativeSelect>
+          )}
           {(valores.estado || valores.cliente || valores.q) && (
             <Button variant="ghost" size="sm" onClick={limpiar}>
               Limpiar filtros
@@ -183,7 +231,7 @@ export default function EnviosPage() {
         <DataTable
           etiqueta="Envíos"
           filas={envios.data ? filas : undefined}
-          columnas={columnas}
+          columnas={eligeCliente ? columnas : columnas.filter((c) => c.id !== 'cliente')}
           clave={(e) => e.id}
           cargando={envios.isLoading}
           error={envios.error}

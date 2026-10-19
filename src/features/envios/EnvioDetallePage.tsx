@@ -1,5 +1,5 @@
 import type { LatLngBoundsExpression } from 'leaflet';
-import { ExternalLink, FileCheck2, Receipt, Route as RouteIcon, Timer } from 'lucide-react';
+import { CalendarClock, CreditCard, ExternalLink, FileCheck2, Receipt, Route as RouteIcon, Split, Timer } from 'lucide-react';
 import { Marker } from 'react-leaflet';
 import { Link, useParams } from 'react-router';
 import { AjustarVista, BaseMap } from '@/components/map/BaseMap';
@@ -11,9 +11,13 @@ import { Plate } from '@/components/shared/Plate';
 import { EmptyState, ErrorState, Limitacion, LoadingState } from '@/components/shared/States';
 import { Timeline } from '@/components/shared/Timeline';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/misc';
+import { usePuede, useRol } from '@/app/auth';
 import {
   es404,
   useCliente,
+  useFacturaDeEnvio,
+  usePagoDeEnvio,
+  usePartes,
   useCostosRuta,
   useDeclaracionEnvio,
   useEnvio,
@@ -29,7 +33,18 @@ import {
   useTrazado,
 } from '@/hooks/queries';
 import { ApiError } from '@/lib/api/errors';
-import { estadoDeclaracion, estadoEnvio, estadoRuta, ESTADOS_FINALES_ENVIO, humanizar, tipoVehiculo } from '@/lib/dominio';
+import {
+  esParte,
+  esPedidoDividido,
+  estadoDeclaracion,
+  estadoEnvio,
+  estadoFacturaPedido,
+  estadoPago,
+  estadoRuta,
+  ESTADOS_FINALES_ENVIO,
+  humanizar,
+  tipoVehiculo,
+} from '@/lib/dominio';
 import { fechaHora, hora, horas, numero, pesos, relativo } from '@/lib/format';
 import type { Envio } from '@/lib/types/api';
 import { FichaViaje } from '../seguimiento/FichaViaje';
@@ -47,13 +62,136 @@ const TONO_EVENTO: Record<string, 'primary' | 'ok' | 'warn' | 'danger' | 'neutra
   con_incidencia: 'danger',
   entregado: 'ok',
   devuelto: 'neutral',
+  programado: 'primary',
+  reprogramado: 'primary',
+  cancelado: 'neutral',
 };
 
 function intervalo(estado?: string) {
   if (!estado) return false;
   if (estado === 'pendiente') return 2000; // contrato 5.1: consultar cada 2 s mientras está pendiente
   if (ESTADOS_FINALES_ENVIO.includes(estado)) return false;
+  if (estado === 'programado') return 30000;
   return 5000;
+}
+
+/** Partes de un pedido dividido: cada una viaja en su propio vehículo. */
+function Partes({ pedido }: { pedido: Envio }) {
+  const p = usePartes(pedido.id, { refetchInterval: ESTADOS_FINALES_ENVIO.includes(pedido.estado) ? false : 5000 });
+  return (
+    <Panel
+      titulo={
+        <span className="flex items-center gap-2">
+          <Split className="size-4 text-primary" aria-hidden /> Partes del pedido
+        </span>
+      }
+      descripcion={`${pedido.partes_entregadas ?? 0} de ${pedido.partes_total} partes entregadas. El estado del pedido lo calcula el sistema a partir de sus partes.`}
+      cuerpo="p-0"
+    >
+      {p.error ? (
+        <ErrorState error={p.error} reintentar={() => p.refetch()} compacto />
+      ) : !p.data ? (
+        <LoadingState />
+      ) : p.data.length === 0 ? (
+        <EmptyState titulo="Sin partes" compacto />
+      ) : (
+        <ul className="divide-y divide-rule">
+          {p.data.map((x) => (
+            <li key={x.id}>
+              <Link to={`/envios/${x.id}`} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-[13px] hover:bg-surface-2">
+                <span className="w-16 shrink-0 font-semibold text-text-2">Parte {x.parte_numero ?? '—'}</span>
+                <Codigo>{x.codigo_envio}</Codigo>
+                <EstadoBadge def={estadoEnvio(x.estado)} />
+                <span className="tabular text-text-2">{numero(x.peso_kg, 2)} kg</span>
+                <span className="ml-auto flex items-center gap-2">
+                  {x.placa_vehiculo ? <Plate placa={x.placa_vehiculo} tamano="sm" /> : <span className="text-xs text-text-3">Sin vehículo</span>}
+                  {x.hora_estimada_llegada && <span className="text-xs text-text-2">llega {hora(x.hora_estimada_llegada)}</span>}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+  );
+}
+
+/** Pago simulado y factura del pedido (contrato 9.7). */
+function Cobro({ envio }: { envio: Envio }) {
+  const verFacturas = usePuede('verFacturas');
+  const pago = usePagoDeEnvio(envio.id, { refetchInterval: 30000 });
+  const factura = useFacturaDeEnvio(verFacturas ? envio.id : null);
+  return (
+    <div className="space-y-5">
+      <div>
+        <p className="mb-2 text-xs font-semibold text-text-2">Pago</p>
+        {pago.error && es404(pago.error) ? (
+          <p className="text-[13px] text-text-2">Este pedido no tiene pago registrado (por ejemplo, se creó antes del cobro por pedido).</p>
+        ) : pago.error ? (
+          <ErrorState error={pago.error} compacto reintentar={() => pago.refetch()} />
+        ) : !pago.data ? (
+          <LoadingState />
+        ) : (
+          <KeyValue
+            items={[
+              { k: 'Estado', v: <EstadoBadge def={estadoPago(pago.data.estado)} /> },
+              { k: 'Monto', v: <strong className="font-cond text-lg">{pesos(pago.data.monto_cop)}</strong> },
+              { k: 'Referencia', v: <Codigo>{pago.data.referencia}</Codigo> },
+              { k: 'Método', v: pago.data.metodo === 'simulado' ? 'Simulado (sin dinero real)' : pago.data.metodo },
+              { k: 'Confirmado', v: fechaHora(pago.data.confirmado_en) },
+              { k: 'Reembolsado', v: fechaHora(pago.data.reembolsado_en, 'No') },
+            ]}
+          />
+        )}
+      </div>
+      {verFacturas && (
+        <div>
+          <p className="mb-2 text-xs font-semibold text-text-2">Factura del pedido</p>
+          {factura.error && es404(factura.error) ? (
+            <p className="text-[13px] text-text-2">Sin factura de pedido.</p>
+          ) : factura.error ? (
+            <ErrorState error={factura.error} compacto reintentar={() => factura.refetch()} />
+          ) : !factura.data ? (
+            <LoadingState />
+          ) : (
+            <KeyValue
+              items={[
+                { k: 'Número', v: <Codigo>{factura.data.numero}</Codigo> },
+                { k: 'Estado', v: <EstadoBadge def={estadoFacturaPedido(factura.data.estado)} /> },
+                { k: 'Concepto', v: factura.data.concepto, ancho: true },
+                { k: 'Valor', v: pesos(factura.data.monto_cop) },
+                { k: 'Emitida', v: fechaHora(factura.data.emitida_en) },
+                ...(factura.data.anulada_en ? [{ k: 'Anulada', v: fechaHora(factura.data.anulada_en) }] : []),
+              ]}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Para quien no ve el mapa (cliente): en qué va el envío, con los datos del propio envío. */
+function EstadoSinMapa({ envio }: { envio: Envio }) {
+  const def = estadoEnvio(envio.estado);
+  return (
+    <Panel titulo="En qué va">
+      <div className="space-y-3 text-[13px]">
+        <p className="flex items-center gap-2">
+          <EstadoBadge def={def} />
+          <span className="text-text-2">{def.ayuda}</span>
+        </p>
+        <KeyValue
+          items={[
+            { k: 'Vehículo', v: envio.placa_vehiculo ? <Plate placa={envio.placa_vehiculo} /> : 'Aún sin vehículo' },
+            { k: 'Conductor', v: envio.conductor_nombre ?? '—' },
+            { k: 'Llegada estimada', v: fechaHora(envio.hora_estimada_llegada) },
+            { k: 'Se actualiza', v: ESTADOS_FINALES_ENVIO.includes(envio.estado) ? 'Terminado' : 'Automáticamente' },
+          ]}
+        />
+      </div>
+    </Panel>
+  );
 }
 
 function MapaEnvio({ envio }: { envio: Envio }) {
@@ -321,17 +459,33 @@ function PruebaEntrega({ envio }: { envio: Envio }) {
 
 export default function EnvioDetallePage() {
   const { id = '' } = useParams();
+  const rol = useRol();
+  const verMapa = usePuede('seguimiento');
+  const verRutas = usePuede('verRutas');
+  const verAduanas = usePuede('aduanas');
+  const verCostos = usePuede('administrar');
+  const verPagos = usePuede('verPagos');
+  const verClientes = usePuede('elegirCliente');
   const q = useEnvio(id, { refetchInterval: (qq) => intervalo(qq.state.data?.estado) });
-  const cliente = useCliente(q.data?.cliente_id);
+  const cliente = useCliente(verClientes ? q.data?.cliente_id : undefined);
+  const padre = useEnvio(q.data?.envio_padre_id ?? undefined);
 
   if (q.error) return <ErrorState error={q.error} reintentar={() => q.refetch()} />;
   if (!q.data) return <LoadingState />;
   const e = q.data;
+  const dividido = esPedidoDividido(e);
+  const parte = esParte(e);
+  const conMapa = verMapa && !dividido;
+  const conCobro = verPagos && !parte;
 
   return (
     <>
       <PageHeader
-        migas={[{ etiqueta: 'Envíos', to: '/envios' }, { etiqueta: e.codigo_envio }]}
+        migas={[
+          { etiqueta: rol === 'cliente' ? 'Mis envíos' : 'Envíos', to: '/envios' },
+          ...(parte && padre.data ? [{ etiqueta: padre.data.codigo_envio, to: `/envios/${padre.data.id}` }] : []),
+          { etiqueta: e.codigo_envio },
+        ]}
         titulo={
           <span className="flex flex-wrap items-center gap-3">
             <span className="font-cond tracking-wide">{e.codigo_envio}</span>
@@ -342,6 +496,34 @@ export default function EnvioDetallePage() {
         acciones={<AccionesEnvio envio={e} />}
       />
 
+      {parte && (
+        <Limitacion titulo={`Parte ${e.parte_numero ?? ''} de un pedido dividido`} className="mb-5 border-info/30 bg-info-soft">
+          Esta parte viaja en su propio vehículo. El pago, la cancelación y la reprogramación se hacen sobre el pedido completo
+          {padre.data ? (
+            <>
+              {' '}
+              <Link to={`/envios/${padre.data.id}`} className="font-semibold text-primary hover:underline">
+                {padre.data.codigo_envio}
+              </Link>
+            </>
+          ) : null}
+          .
+        </Limitacion>
+      )}
+      {e.estado === 'programado' && (
+        <Limitacion titulo="Envío programado" className="mb-5 border-info/30 bg-info-soft">
+          <span className="inline-flex items-center gap-1.5">
+            <CalendarClock className="size-4" aria-hidden /> Sale el {fechaHora(e.fecha_programada)}
+          </span>
+          {' · '}
+          Aún no tiene vehículo reservado: a esa hora el sistema lo asigna solo.
+        </Limitacion>
+      )}
+      {e.estado === 'cancelado' && (
+        <Limitacion titulo="Pedido cancelado" className="mb-5">
+          Se canceló antes de que saliera un vehículo. Si estaba pagado, el reembolso lo hace un administrador.
+        </Limitacion>
+      )}
       {e.estado === 'pendiente' && (
         <Limitacion titulo="Asignación en proceso" className="mb-5 border-info/30 bg-info-soft">
           El sistema está reservando vehículo y conductor. Esta ficha se actualiza cada 2 segundos.
@@ -356,38 +538,57 @@ export default function EnvioDetallePage() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,1fr)]">
         <div className="min-w-0 space-y-5">
-          <MapaEnvio envio={e} />
+          {dividido && <Partes pedido={e} />}
+          {conMapa ? <MapaEnvio envio={e} /> : !dividido && <EstadoSinMapa envio={e} />}
           <Panel cuerpo="p-0">
             <Tabs defaultValue="bitacora">
               <TabsList className="px-3">
                 <TabsTrigger value="bitacora">Bitácora</TabsTrigger>
-                <TabsTrigger value="viaje">Eventos del viaje</TabsTrigger>
-                <TabsTrigger value="asignacion">Asignación</TabsTrigger>
-                {e.es_internacional && <TabsTrigger value="aduana">Aduana</TabsTrigger>}
-                <TabsTrigger value="costos">Costos</TabsTrigger>
-                <TabsTrigger value="entrega">Prueba de entrega</TabsTrigger>
+                {conCobro && (
+                  <TabsTrigger value="cobro">
+                    <CreditCard className="size-3.5" aria-hidden /> Pago y factura
+                  </TabsTrigger>
+                )}
+                {verMapa && !dividido && <TabsTrigger value="viaje">Eventos del viaje</TabsTrigger>}
+                {verRutas && !dividido && <TabsTrigger value="asignacion">Asignación</TabsTrigger>}
+                {verAduanas && e.es_internacional && !dividido && <TabsTrigger value="aduana">Aduana</TabsTrigger>}
+                {verCostos && !dividido && <TabsTrigger value="costos">Costos</TabsTrigger>}
+                {!dividido && <TabsTrigger value="entrega">Prueba de entrega</TabsTrigger>}
               </TabsList>
               <div className="px-4 pb-4">
                 <TabsContent value="bitacora">
                   <Bitacora envioId={e.id} estado={e.estado} />
                 </TabsContent>
-                <TabsContent value="viaje">
-                  <EventosViaje envioId={e.id} />
-                </TabsContent>
-                <TabsContent value="asignacion">
-                  <Asignacion envio={e} />
-                </TabsContent>
-                {e.es_internacional && (
+                {conCobro && (
+                  <TabsContent value="cobro">
+                    <Cobro envio={e} />
+                  </TabsContent>
+                )}
+                {verMapa && !dividido && (
+                  <TabsContent value="viaje">
+                    <EventosViaje envioId={e.id} />
+                  </TabsContent>
+                )}
+                {verRutas && !dividido && (
+                  <TabsContent value="asignacion">
+                    <Asignacion envio={e} />
+                  </TabsContent>
+                )}
+                {verAduanas && e.es_internacional && !dividido && (
                   <TabsContent value="aduana">
                     <Aduana envioId={e.id} />
                   </TabsContent>
                 )}
-                <TabsContent value="costos">
-                  <Costos envioId={e.id} />
-                </TabsContent>
-                <TabsContent value="entrega">
-                  <PruebaEntrega envio={e} />
-                </TabsContent>
+                {verCostos && !dividido && (
+                  <TabsContent value="costos">
+                    <Costos envioId={e.id} />
+                  </TabsContent>
+                )}
+                {!dividido && (
+                  <TabsContent value="entrega">
+                    <PruebaEntrega envio={e} />
+                  </TabsContent>
+                )}
               </div>
             </Tabs>
           </Panel>
@@ -399,16 +600,22 @@ export default function EnvioDetallePage() {
               items={[
                 {
                   k: 'Cliente',
-                  v: (
+                  v: verClientes ? (
                     <Link to={`/clientes/${e.cliente_id}`} className="text-primary hover:underline">
                       {cliente.data?.nombre ?? e.codigo_cliente ?? 'Ver cliente'}
                     </Link>
+                  ) : (
+                    (e.codigo_cliente ?? 'Su empresa')
                   ),
                   ancho: true,
                 },
-                { k: 'Peso', v: `${numero(e.peso_kg, 2)} kg` },
+                ...(e.monto_cop != null ? [{ k: 'Precio del pedido', v: <strong className="font-cond text-base">{pesos(e.monto_cop)}</strong> }] : []),
+                ...(dividido ? [{ k: 'Partes', v: `${e.partes_entregadas ?? 0} de ${e.partes_total} entregadas` }] : []),
+                { k: 'Peso', v: `${numero(e.peso_kg, 2)} kg${dividido ? ' (total)' : ''}` },
                 { k: 'Volumen', v: e.volumen_m3 != null ? `${numero(e.volumen_m3, 2)} m³` : '—' },
                 { k: 'Carga', v: e.tipo_carga === 'refrigerada' || e.es_hazmat || e.es_internacional ? <EtiquetasCarga e={e} /> : 'General, nacional', ancho: true },
+                ...(e.fecha_programada ? [{ k: 'Programado para', v: fechaHora(e.fecha_programada) }] : []),
+                { k: 'Carga divisible', v: e.es_divisible ? 'Sí' : 'No' },
                 { k: 'Fecha límite (SLA)', v: fechaHora(e.fecha_limite_sla, 'Sin fecha límite') },
                 { k: 'Llegada estimada', v: fechaHora(e.hora_estimada_llegada) },
                 { k: 'Creado', v: `${fechaHora(e.creado_en)} (${relativo(e.creado_en)})`, ancho: true },
@@ -416,7 +623,7 @@ export default function EnvioDetallePage() {
               ]}
             />
           </Panel>
-          <Panel titulo="Vehículo y conductor">
+          {!dividido && <Panel titulo="Vehículo y conductor">
             {e.vehiculo_id ? (
               <KeyValue
                 items={[
@@ -438,11 +645,11 @@ export default function EnvioDetallePage() {
             ) : (
               <p className="text-[13px] text-text-2">Sin vehículo asignado todavía.</p>
             )}
-          </Panel>
+          </Panel>}
           <Panel
             titulo="Ruta"
             acciones={
-              e.ruta_maestra_id && (
+              verRutas && e.ruta_maestra_id && (
                 <Link to={`/rutas/maestras/${e.ruta_maestra_id}`} className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
                   <RouteIcon className="size-3.5" /> Ruta maestra
                 </Link>
@@ -451,15 +658,15 @@ export default function EnvioDetallePage() {
           >
             <KeyValue
               items={[
-                { k: 'Ruta maestra', v: e.codigo_ruta ? <Codigo to={e.ruta_maestra_id ? `/rutas/maestras/${e.ruta_maestra_id}` : undefined}>{e.codigo_ruta}</Codigo> : '—' },
+                { k: 'Ruta maestra', v: e.codigo_ruta ? <Codigo to={verRutas && e.ruta_maestra_id ? `/rutas/maestras/${e.ruta_maestra_id}` : undefined}>{e.codigo_ruta}</Codigo> : '—' },
                 { k: 'Distancia', v: e.distancia_km != null ? `${numero(e.distancia_km, 1)} km` : '—' },
                 { k: 'Duración real estimada', v: horas(e.duracion_horas) },
-                { k: 'Ruta de asignación', v: e.ruta_id ? <Link className="text-primary hover:underline" to={`/rutas/${e.ruta_id}`}>Ver detalle</Link> : '—' },
+                ...(verRutas ? [{ k: 'Ruta de asignación', v: e.ruta_id ? <Link className="text-primary hover:underline" to={`/rutas/${e.ruta_id}`}>Ver detalle</Link> : '—' }] : []),
                 { k: 'Países', v: `${e.codigo_pais_origen ?? '—'} a ${e.codigo_pais_destino ?? '—'}` },
               ]}
             />
           </Panel>
-          {e.estado === 'entregado' && (
+          {verCostos && e.estado === 'entregado' && (
             <Link to={`/facturacion?tab=costos&envio=${e.id}`} className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-primary hover:underline">
               <Receipt className="size-4" /> Ver en facturación
             </Link>

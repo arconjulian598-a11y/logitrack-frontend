@@ -16,6 +16,10 @@ describe('buscador global', () => {
     expect(interpretarBusqueda('1000000006')).toEqual({ tipo: 'codigo10', codigo: 1000000006 });
     expect(interpretarBusqueda('hola')).toEqual({ tipo: 'desconocido' });
   });
+  it('reconoce las partes de un pedido dividido', () => {
+    expect(interpretarBusqueda('env-32-p1')).toEqual({ tipo: 'envio', codigo: 'ENV-00000032-P1' });
+    expect(interpretarBusqueda('ENV-00000032-P10')).toEqual({ tipo: 'envio', codigo: 'ENV-00000032-P10' });
+  });
 });
 
 describe('formatos', () => {
@@ -57,9 +61,9 @@ describe('reglas del dominio', () => {
 });
 
 describe('capa de API', () => {
-  it('expone exactamente las 83 rutas públicas del contrato', () => {
+  it('expone las 83 rutas de la primera versión más las 21 de la fase 2', () => {
     const total = Object.values(endpoints).reduce((n, grupo) => n + Object.keys(grupo).length, 0);
-    expect(total).toBe(83);
+    expect(total).toBe(104);
   });
   it('construye URLs con la base configurada y omite parámetros vacíos', () => {
     expect(construirUrl('/envios', { estado: 'en_transito', cliente_id: '' })).toBe('http://localhost:8002/api/v1/envios?estado=en_transito');

@@ -1,5 +1,5 @@
 /**
- * Las 83 rutas públicas del API Gateway (contrato, sección 5.7), agrupadas por microservicio.
+ * Las rutas públicas del API Gateway (contrato, secciones 5.7 y 9), agrupadas por microservicio.
  * Cada función corresponde a exactamente una ruta. Nada fuera de `/api/v1` excepto `/health`.
  * Las rutas internas que el gateway bloquea (POST /reservas, POST /reservas/liberar, POST /rutas,
  * POST /telemetria) no aparecen aquí a propósito.
@@ -15,6 +15,22 @@ export const gateway = {
   health: (o?: S) => http.get<{ status: string; service: string }>('/health', { ...o, raiz: true }),
   /** GET /estado */
   estado: (o?: S) => http.get<T.EstadoSistema>('/estado', o),
+};
+
+// ---------- Autenticación (fase 2) ----------
+export const auth = {
+  /** POST /auth/login: la única ruta pública. Se reintenta si el backend está despertando. */
+  login: (email: string, password: string) =>
+    http.post<T.RespuestaLogin>('/auth/login', { email, password }, { publica: true, reintentarArranque: true, timeoutMs: 70000 }),
+  /** GET /auth/me: usuario de la sesión (rol para el menú). */
+  yo: (o?: S) => http.get<T.Usuario>('/auth/me', { ...o, timeoutMs: 70000 }),
+};
+
+// ---------- Shipment · Usuarios (solo administrador) ----------
+export const usuarios = {
+  listar: (q: { rol?: string; limite?: number } = {}, o?: S) => http.get<T.Usuario[]>('/usuarios', { ...o, query: q }),
+  crear: (body: T.UsuarioCrear) => http.post<T.Usuario>('/usuarios', body),
+  actualizar: (id: string, body: T.UsuarioActualizar) => http.patch<T.Usuario>(`/usuarios/${seg(id)}`, body),
 };
 
 // ---------- Shipment · Clientes ----------
@@ -73,11 +89,20 @@ export const flota = {
 
 // ---------- Shipment · Envíos ----------
 export const envios = {
-  listar: (q: { estado?: string; cliente_id?: string } = {}, o?: S) =>
+  listar: (q: { estado?: string; cliente_id?: string; solo_pedidos?: boolean; envio_padre_id?: string } = {}, o?: S) =>
     http.get<T.Envio[]>('/envios', { ...o, query: q }),
-  /** `clave`: la misma en reintentos del mismo clic; el servidor nunca crea dos envíos con la misma clave. */
+  /** POST /envios/cotizar: mismo cuerpo que crear; no crea nada. Puede tardar si la ruta es nueva. */
+  cotizar: (body: T.EnvioCrear, o?: S) => http.post<T.Cotizacion>('/envios/cotizar', body, { ...o, timeoutMs: 70000 }),
+  /** `clave`: la misma en reintentos del mismo clic (si el backend la usa, nunca crea dos envíos con ella). */
   crear: (body: T.EnvioCrear, clave?: string) =>
-    http.post<T.Envio>('/envios', body, clave ? { headers: { 'Idempotency-Key': clave } } : undefined),
+    http.post<T.Envio>('/envios', body, { timeoutMs: 70000, ...(clave ? { headers: { 'Idempotency-Key': clave } } : {}) }),
+  /** Partes de un pedido dividido, de la más pesada a la más liviana. */
+  partes: (id: string, o?: S) => http.get<T.Envio[]>(`/envios/${seg(id)}/partes`, o),
+  programados: (q: { desde?: string; hasta?: string; incluir_activados?: boolean; limite?: number } = {}, o?: S) =>
+    http.get<T.Envio[]>('/envios/programados', { ...o, query: q }),
+  cancelar: (id: string, motivo?: string | null) =>
+    http.post<T.Envio>(`/envios/${seg(id)}/cancelar`, { motivo: motivo || null }),
+  reprogramar: (id: string, body: T.EnvioReprogramar) => http.patch<T.Envio>(`/envios/${seg(id)}/reprogramar`, body),
   porCodigo: (codigo: string, o?: S) => http.get<T.Envio>(`/envios/codigo/${seg(codigo)}`, o),
   obtener: (id: string, o?: S) => http.get<T.Envio>(`/envios/${seg(id)}`, o),
   eventos: (id: string, o?: S) => http.get<T.EnvioEvento[]>(`/envios/${seg(id)}/eventos`, o),
@@ -182,6 +207,23 @@ export const facturacion = {
   cerrarPeriodo: () => http.post<T.Factura[]>('/facturas/cerrar-periodo'),
 };
 
+// ---------- Billing · Cobro por pedido (fase 2) ----------
+type Pagina = { limite?: number; offset?: number };
+export const cobros = {
+  pagos: (q: { cliente_id?: string; estado?: string; envio_id?: string } & Pagina = {}, o?: S) =>
+    http.get<T.Pago[]>('/pagos', { ...o, query: q }),
+  porReembolsar: (q: Pagina = {}, o?: S) => http.get<T.PagoPorReembolsar[]>('/pagos/por-reembolsar', { ...o, query: q }),
+  pagoDeEnvio: (envioId: string, o?: S) => http.get<T.Pago>(`/pagos/envio/${seg(envioId)}`, o),
+  pago: (id: string, o?: S) => http.get<T.Pago>(`/pagos/${seg(id)}`, o),
+  reembolsar: (id: string, nota?: string | null) =>
+    http.post<T.Pago>(`/pagos/${seg(id)}/reembolsar`, nota ? { nota } : undefined),
+  facturas: (q: { cliente_id?: string; desde?: string; hasta?: string; estado?: string } & Pagina = {}, o?: S) =>
+    http.get<T.FacturaPedido[]>('/facturas-pedido', { ...o, query: q }),
+  facturaDeEnvio: (envioId: string, o?: S) => http.get<T.FacturaPedido>(`/facturas-pedido/envio/${seg(envioId)}`, o),
+  cotizaciones: (q: { cliente_id?: string; limite?: number } = {}, o?: S) =>
+    http.get<T.CotizacionGuardada[]>('/cotizaciones', { ...o, query: q }),
+};
+
 // ---------- Analytics ----------
 export const analitica = {
   resumen: (o?: S) => http.get<T.ResumenEjecutivo>('/dashboard/resumen', o),
@@ -196,4 +238,9 @@ export const analitica = {
   actividadReciente: (limite = 20, o?: S) =>
     http.get<T.ActividadReciente[]>('/dashboard/actividad-reciente', { ...o, query: { limite } }),
   ejecutarEtl: () => http.post<T.ResultadoEtl>('/etl/ejecutar', undefined, { timeoutMs: 120000 }),
+  ingresosMensual: (anio?: number, o?: S) =>
+    http.get<T.IngresoPeriodo[]>('/dashboard/ingresos/mensual', { ...o, query: { anio } }),
+  ingresosAnual: (o?: S) => http.get<T.IngresoPeriodo[]>('/dashboard/ingresos/anual', o),
+  ingresosPedidos: (q: { mes?: string; estado?: string; cliente_id?: string } & Pagina = {}, o?: S) =>
+    http.get<T.IngresoPedido[]>('/dashboard/ingresos/pedidos', { ...o, query: q }),
 };

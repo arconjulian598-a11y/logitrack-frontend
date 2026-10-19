@@ -24,6 +24,7 @@ function buscar(tabla: Record<string, Def>, valor: string | null | undefined): D
 }
 
 export const ESTADOS_ENVIO: Record<string, Def> = {
+  programado: { etiqueta: 'Programado', tono: 'info', ayuda: 'Creado para una fecha futura; aún no tiene vehículo.' },
   pendiente: { etiqueta: 'Pendiente', tono: 'neutral', ayuda: 'Recién creado; el sistema busca vehículo.' },
   sin_asignacion: { etiqueta: 'Sin asignación', tono: 'warn', ayuda: 'No había vehículo libre compatible; se reintenta solo.' },
   asignado: { etiqueta: 'Asignado', tono: 'info', ayuda: 'Tiene vehículo, conductor y ETA; el viaje está por empezar.' },
@@ -31,7 +32,8 @@ export const ESTADOS_ENVIO: Record<string, Def> = {
   con_incidencia: { etiqueta: 'Con incidencia', tono: 'danger', ayuda: 'Marcado manualmente con una incidencia.' },
   retenido_aduana: { etiqueta: 'Retenido en aduana', tono: 'danger', ayuda: 'El viaje está en pausa hasta que Aduanas lo libere.' },
   entregado: { etiqueta: 'Entregado', tono: 'ok', ayuda: 'Terminado, con prueba de entrega.' },
-  devuelto: { etiqueta: 'Devuelto', tono: 'muted', ayuda: 'Cancelado o devuelto; liberó el vehículo.' },
+  devuelto: { etiqueta: 'Devuelto', tono: 'muted', ayuda: 'Devuelto; liberó el vehículo.' },
+  cancelado: { etiqueta: 'Cancelado', tono: 'muted', ayuda: 'Cancelado antes de que saliera un vehículo.' },
 };
 export const estadoEnvio = (v?: string | null) => buscar(ESTADOS_ENVIO, v);
 export const ESTADOS_ENVIO_LISTA = Object.keys(ESTADOS_ENVIO);
@@ -44,7 +46,29 @@ export const TRANSICIONES_MANUALES: Record<'en_transito' | 'con_incidencia' | 'd
 };
 export const ESTADOS_ENTREGABLES = ['asignado', 'en_transito', 'con_incidencia'];
 export const ESTADOS_EN_ESPERA = ['pendiente', 'sin_asignacion'];
-export const ESTADOS_FINALES_ENVIO = ['entregado', 'devuelto'];
+export const ESTADOS_FINALES_ENVIO = ['entregado', 'devuelto', 'cancelado'];
+/** Se cancela (POST /envios/{id}/cancelar) solo mientras no tenga vehículo en camino. */
+export const ESTADOS_CANCELABLES = ['programado', 'pendiente', 'sin_asignacion'];
+
+/** ¿Es el pedido (padre) de una carga dividida? */
+export const esPedidoDividido = (e: { partes_total?: number | null }) => (e.partes_total ?? 0) > 0;
+/** ¿Es una parte de un pedido dividido? */
+export const esParte = (e: { envio_padre_id?: string | null }) => !!e.envio_padre_id;
+
+export const ESTADOS_PAGO: Record<string, Def> = {
+  pendiente: { etiqueta: 'Pendiente', tono: 'warn' },
+  confirmado: { etiqueta: 'Pagado', tono: 'ok', ayuda: 'Pago simulado confirmado.' },
+  reembolsado: { etiqueta: 'Reembolsado', tono: 'muted' },
+};
+export const estadoPago = (v?: string | null) => buscar(ESTADOS_PAGO, v);
+
+export const ESTADOS_FACTURA_PEDIDO: Record<string, Def> = {
+  emitida: { etiqueta: 'Emitida', tono: 'ok' },
+  anulada: { etiqueta: 'Anulada', tono: 'muted' },
+};
+export const estadoFacturaPedido = (v?: string | null) => buscar(ESTADOS_FACTURA_PEDIDO, v);
+
+export const MOTIVOS_REEMBOLSO: Record<string, string> = { cancelado: 'Pedido cancelado', devuelto: 'Pedido devuelto' };
 
 export const ESTADOS_VEHICULO: Record<string, Def> = {
   active: { etiqueta: 'Disponible', tono: 'ok' },
@@ -176,14 +200,14 @@ export const DESTINATARIOS: Record<string, string> = { cliente: 'Cliente', gesto
 
 export const SERVICIOS: Record<string, { nombre: string; modulo: string }> = {
   fleet: { nombre: 'Flota', modulo: 'Vehículos, conductores, viabilidad y reservas' },
-  shipment: { nombre: 'Envíos', modulo: 'Envíos, clientes y pruebas de entrega' },
+  shipment: { nombre: 'Envíos', modulo: 'Envíos, clientes, usuarios y pruebas de entrega' },
   routing: { nombre: 'Rutas', modulo: 'Ubicaciones, rutas maestras, rutas y asignaciones' },
   tracking: { nombre: 'Seguimiento', modulo: 'Mapa, simulación y telemetría' },
   maintenance: { nombre: 'Mantenimiento', modulo: 'Programas e intervenciones' },
   customs: { nombre: 'Aduanas', modulo: 'Declaraciones aduaneras' },
   notification: { nombre: 'Notificaciones', modulo: 'Bandeja y preferencias' },
-  billing: { nombre: 'Facturación', modulo: 'Tarifas, costos y facturas' },
-  analytics: { nombre: 'Analítica', modulo: 'Indicadores y ETL' },
+  billing: { nombre: 'Facturación', modulo: 'Precios, pagos, facturas, reembolsos, tarifas y costos' },
+  analytics: { nombre: 'Analítica', modulo: 'Indicadores, ingresos y ETL' },
 };
 
 export const CAUSAS_VIABILIDAD: Record<string, string> = {
@@ -192,6 +216,8 @@ export const CAUSAS_VIABILIDAD: Record<string, string> = {
   VOLUMEN_EXCEDIDO: 'Ningún vehículo soporta ese volumen.',
   SIN_REFRIGERACION: 'No hay vehículos refrigerados con conductor.',
   SIN_HABILITACION_HAZMAT: 'No hay pareja vehículo+conductor habilitada para HAZMAT.',
+  CARGA_INDIVISIBLE_EXCEDE_CAPACIDAD: 'Ningún vehículo puede llevar ese peso y la carga no es divisible.',
+  DEMASIADAS_PARTES: 'Dividir la carga necesitaría más de 10 vehículos.',
 };
 
 /**
@@ -210,6 +236,12 @@ export const ETIQUETAS: Record<string, string> = {
   llegada_destino: 'Llegó al destino',
   entregado: 'Entregado',
   devuelto: 'Devuelto',
+  programado: 'Programado',
+  cancelado: 'Cancelado',
+  reprogramado: 'Reprogramado',
+  activado: 'Salió de la programación',
+  pago_confirmado: 'Pago confirmado',
+  dividido: 'Carga dividida en partes',
   // Bitácora del viaje (tracking-ingestion-service)
   creada: 'Viaje programado',
   inicio: 'Inicio del viaje',
@@ -228,6 +260,7 @@ export const ETIQUETAS: Record<string, string> = {
   'shipment.delivered': 'Envío entregado',
   'shipment.incident': 'Incidencia en el envío',
   'shipment.returned': 'Envío devuelto',
+  'shipment.cancelled': 'Envío cancelado',
   'customs.cleared': 'Aduana liberó el envío',
   'customs.held': 'Aduana retuvo el envío',
   'maintenance.alert': 'Alerta de mantenimiento',

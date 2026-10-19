@@ -19,6 +19,9 @@ export type Destino =
 export function interpretarBusqueda(entrada: string): Destino {
   const t = entrada.trim().toUpperCase();
   if (/^ENV[-\s]?\d{1,8}$/.test(t)) return { tipo: 'envio', codigo: normalizarCodigo('ENV', t) };
+  // Parte de un pedido dividido: ENV-00000032-P1
+  const parte = /^(ENV[-\s]?\d{1,8})-?P(\d{1,2})$/.exec(t);
+  if (parte) return { tipo: 'envio', codigo: `${normalizarCodigo('ENV', parte[1] ?? '')}-P${Number(parte[2])}` };
   if (/^RUT[-\s]?\d{1,8}$/.test(t)) return { tipo: 'ruta', codigo: normalizarCodigo('RUT', t) };
   if (/^[A-Z]{2}-[A-Z]{3}\d*$/.test(t)) return { tipo: 'ubicacion', codigo: t };
   if (/^[A-Z]{3}\s?\d{3}$/.test(t) || /^[A-Z]{3}\d{2}[A-Z]$/.test(t)) return { tipo: 'placa', placa: t.replace(/\s/g, '') };

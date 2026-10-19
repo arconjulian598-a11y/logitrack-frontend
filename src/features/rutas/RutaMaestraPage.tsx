@@ -1,3 +1,4 @@
+import { usePuede } from '@/app/auth';
 import type { LatLngBoundsExpression } from 'leaflet';
 import { RefreshCcw } from 'lucide-react';
 import { useState } from 'react';
@@ -15,6 +16,7 @@ import * as api from '@/lib/api/endpoints';
 import { fechaHora, horas, numero } from '@/lib/format';
 
 export default function RutaMaestraPage() {
+  const recalcula = usePuede('editarUbicaciones'); // recalcular rutas maestras: operador y administrador
   const { id = '' } = useParams();
   const r = useRutaMaestra(id);
   const g = useGeometria(id);
@@ -40,9 +42,11 @@ export default function RutaMaestraPage() {
         titulo={<span className="font-cond tracking-wide">{m.codigo_ruta}</span>}
         descripcion={`${m.origen.etiqueta} hacia ${m.destino.etiqueta}`}
         acciones={
-          <Button onClick={() => setConfirmar(true)}>
-            <RefreshCcw /> Recalcular con el servicio de mapas
-          </Button>
+          recalcula && (
+            <Button onClick={() => setConfirmar(true)}>
+              <RefreshCcw /> Recalcular con el servicio de mapas
+            </Button>
+          )
         }
       />
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]">

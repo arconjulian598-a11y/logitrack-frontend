@@ -3,16 +3,19 @@ import type { ReactNode } from 'react';
 import { Toaster } from 'sonner';
 import { TooltipProvider } from '@/components/ui/misc';
 import { ApiError } from '@/lib/api/errors';
+import { AuthProvider } from './auth';
 
 function reintentable(fallos: number, error: unknown): boolean {
   if (error instanceof ApiError) {
     // 4xx son respuestas definitivas del backend; solo se reintenta red y 5xx.
     if (error.status >= 400 && error.status < 500) return false;
+    // Las lecturas ya se reintentaron 3 veces (3, 6, 12 s) si el backend estaba despertando
+    return fallos < 1;
   }
   return fallos < 2;
 }
 
-const queryClient = new QueryClient({
+export const queryClient = new QueryClient({
   queryCache: new QueryCache(),
   mutationCache: new MutationCache(),
   defaultOptions: {
@@ -31,7 +34,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        {children}
+        <AuthProvider>{children}</AuthProvider>
         <Toaster
           position="bottom-right"
           richColors

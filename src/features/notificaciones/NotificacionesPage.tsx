@@ -1,3 +1,4 @@
+import { usePuede } from '@/app/auth';
 import { Bell, Mail, MessageSquare, RefreshCw, Search, Smartphone } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
@@ -158,6 +159,7 @@ function Preferencias() {
 }
 
 export default function NotificacionesPage() {
+  const prefs = usePuede('preferencias');
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') ?? 'bandeja';
   return (
@@ -166,14 +168,16 @@ export default function NotificacionesPage() {
       <Tabs value={tab} onValueChange={(v) => setParams({ tab: v }, { replace: true })}>
         <TabsList className="mb-1">
           <TabsTrigger value="bandeja">Bandeja</TabsTrigger>
-          <TabsTrigger value="preferencias">Preferencias por cliente</TabsTrigger>
+          {prefs && <TabsTrigger value="preferencias">Preferencias por cliente</TabsTrigger>}
         </TabsList>
         <TabsContent value="bandeja">
           <Bandeja />
         </TabsContent>
-        <TabsContent value="preferencias">
-          <Preferencias />
-        </TabsContent>
+        {prefs && (
+          <TabsContent value="preferencias">
+            <Preferencias />
+          </TabsContent>
+        )}
       </Tabs>
     </>
   );

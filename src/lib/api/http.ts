@@ -1,4 +1,6 @@
+import { cerrarSesion, token } from '@/lib/auth/sesion';
 import { config } from '@/lib/config';
+import { ESPERAS_ARRANQUE_MS, esperar, marcarDespertando } from './arranque';
 import { ApiError, crearApiError } from './errors';
 
 export type Query = Record<string, string | number | boolean | null | undefined>;
@@ -13,6 +15,10 @@ export interface Opciones {
   timeoutMs?: number;
   /** Cabeceras adicionales (por ejemplo `Idempotency-Key`). */
   headers?: Record<string, string>;
+  /** Ruta pública (POST /auth/login): sin token y un 401 no cierra la sesión. */
+  publica?: boolean;
+  /** Reintentar 3, 6 y 12 s si el backend está despertando (por defecto: solo GET). */
+  reintentarArranque?: boolean;
 }
 
 /** Une la cancelación de TanStack Query con un límite de tiempo. */
@@ -50,13 +56,18 @@ async function leerCuerpo(resp: Response): Promise<unknown> {
   }
 }
 
-/**
- * Llamada al API Gateway. Sin cookies (contrato 1.4). Propaga `signal` para que TanStack Query
- * cancele peticiones obsoletas. Lanza `ApiError` con status 0 si no hay conexión.
- */
-export async function solicitar<T>(metodo: string, ruta: string, opts: Opciones = {}): Promise<T> {
+/** ¿El fallo parece el backend despertando (Render) o un servicio dormido? */
+function esArranque(e: unknown): boolean {
+  if (!(e instanceof ApiError)) return false;
+  if (e.status === 0) return true; // sin respuesta (el proxy de Render corta sin cabeceras CORS)
+  if (e.status === 502 || e.status === 504) return true;
+  return e.status === 503 && (!e.codigo || e.codigo === 'SERVICIO_NO_DISPONIBLE');
+}
+
+async function unaVez<T>(metodo: string, ruta: string, opts: Opciones): Promise<T> {
   const tieneCuerpo = opts.body !== undefined;
   const limiteMs = opts.timeoutMs ?? config.timeoutMs;
+  const t = opts.publica ? null : token();
   let resp: Response;
   try {
     resp = await fetch(construirUrl(ruta, opts.query, opts.raiz), {
@@ -64,6 +75,7 @@ export async function solicitar<T>(metodo: string, ruta: string, opts: Opciones 
       headers: {
         Accept: 'application/json',
         ...(tieneCuerpo ? { 'Content-Type': 'application/json' } : {}),
+        ...(t ? { Authorization: `Bearer ${t}` } : {}),
         ...(opts.headers ?? {}),
       },
       body: tieneCuerpo ? JSON.stringify(opts.body) : undefined,
@@ -79,9 +91,39 @@ export async function solicitar<T>(metodo: string, ruta: string, opts: Opciones 
   }
   const cuerpo = await leerCuerpo(resp);
   if (!resp.ok) {
-    throw crearApiError(resp.status, cuerpo, resp.headers.get('X-Request-ID') ?? undefined);
+    const error = crearApiError(resp.status, cuerpo, resp.headers.get('X-Request-ID') ?? undefined);
+    // 401: la sesión ya no sirve (falta, inválida o vencida) -> volver al inicio de sesión
+    if (resp.status === 401 && !opts.publica) cerrarSesion('expirada');
+    throw error;
   }
   return cuerpo as T;
+}
+
+/**
+ * Llamada al API Gateway con el token de la sesión. Sin cookies (contrato 1.4). Propaga `signal`
+ * para que TanStack Query cancele peticiones obsoletas. Lanza `ApiError` con status 0 si no hay
+ * conexión. Las lecturas se reintentan con espera creciente si el backend está despertando.
+ */
+export async function solicitar<T>(metodo: string, ruta: string, opts: Opciones = {}): Promise<T> {
+  const reintentar = opts.reintentarArranque ?? metodo === 'GET';
+  if (!reintentar) return unaVez<T>(metodo, ruta, opts);
+  let avisado = false;
+  try {
+    for (let intento = 0; ; intento++) {
+      try {
+        return await unaVez<T>(metodo, ruta, opts);
+      } catch (e) {
+        if (intento >= ESPERAS_ARRANQUE_MS.length || !esArranque(e)) throw e;
+        if (!avisado) {
+          avisado = true;
+          marcarDespertando(true);
+        }
+        await esperar(ESPERAS_ARRANQUE_MS[intento] ?? 3000, opts.signal);
+      }
+    }
+  } finally {
+    if (avisado) marcarDespertando(false);
+  }
 }
 
 export const http = {

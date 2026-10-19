@@ -10,6 +10,12 @@ export interface ErrorValidacion {
 }
 
 export type CodigoGateway =
+  | 'NO_AUTENTICADO'
+  | 'TOKEN_INVALIDO'
+  | 'TOKEN_EXPIRADO'
+  | 'CREDENCIALES_INVALIDAS'
+  | 'SIN_PERMISO'
+  | 'JWT_NO_CONFIGURADO'
   | 'RUTA_NO_ENCONTRADA'
   | 'METODO_NO_PERMITIDO'
   | 'SERVICIO_NO_DISPONIBLE'
@@ -64,6 +70,16 @@ export class ApiError extends Error {
 
   get noEncontrado(): boolean {
     return this.status === 404;
+  }
+
+  /** El rol del usuario no puede hacer esto (la sesión sigue siendo válida). */
+  get sinPermiso(): boolean {
+    return this.status === 403;
+  }
+
+  /** La sesión no sirve (falta, inválida o vencida). */
+  get sinSesion(): boolean {
+    return this.status === 401;
   }
 }
 
@@ -126,15 +142,19 @@ export function crearApiError(status: number, cuerpo: unknown, requestId?: strin
 /** Mensaje corto y accionable para mostrar al usuario a partir de cualquier error. */
 export function describirError(error: unknown): string {
   if (error instanceof ApiError) {
+    const ref = error.requestId ? ` (ID de la petición: ${error.requestId})` : '';
     if (error.esDeRed) {
-      return 'No se pudo conectar con el API Gateway. Compruebe que está encendido y que este origen está en CORS_ORIGINS.';
+      return 'No se pudo conectar con el API Gateway. Si el sistema estaba dormido, espere un minuto y reintente; si sigue igual, revise que este sitio esté en CORS_ORIGINS del gateway.';
     }
+    if (error.sinPermiso) return 'No tiene permiso para esta acción.';
+    if (error.sinSesion && error.codigo !== 'CREDENCIALES_INVALIDAS') return 'Su sesión terminó. Inicie sesión de nuevo.';
     if (error.codigo === 'SERVICIO_NO_DISPONIBLE') {
       return `El servicio ${error.servicio ?? ''} no está disponible en este momento. Reintente en unos segundos.`.replace('  ', ' ');
     }
     if (error.codigo === 'SERVICIO_LENTO') {
       return `El servicio ${error.servicio ?? ''} tardó demasiado en responder.`.replace('  ', ' ');
     }
+    if (error.status >= 500) return `${error.message}${ref}`;
     return error.message;
   }
   if (error instanceof Error) return error.message;

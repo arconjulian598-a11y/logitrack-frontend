@@ -12,8 +12,11 @@ function entero(valor: string | undefined, porDefecto: number): number {
 
 const env = import.meta.env;
 
-/** Misma clave y mismo parámetro `?api=` que usa `web-frontend/` (flujo de LevantarTunel.ps1). */
-export const CLAVE_GATEWAY = 'logitrack_api_url';
+/**
+ * Gateway elegido con `?api=` (se recuerda en este navegador). La clave cambió con la fase 2 para
+ * que un túnel viejo guardado antes no reemplace al gateway desplegado.
+ */
+export const CLAVE_GATEWAY = 'logitrack_gateway_v2';
 
 /** Acepta solo una raíz http(s) sin ruta de API; devuelve null si no es válida. */
 export function normalizarGateway(valor: string | null | undefined): string | null {

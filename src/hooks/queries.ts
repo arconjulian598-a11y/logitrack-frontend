@@ -2,14 +2,111 @@
  * Consultas (lecturas) con TanStack Query. Cada hook envuelve una ruta pública del gateway.
  * La cancelación de peticiones obsoletas se hace pasando `signal` al cliente HTTP.
  */
-import { keepPreviousData, useQueries, useQuery, type UseQueryOptions } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useQueries,
+  useQuery as useQueryBase,
+  type QueryKey,
+  type UseQueryOptions,
+  type UseQueryResult,
+} from '@tanstack/react-query';
+import { useRol } from '@/app/auth';
 import * as api from '@/lib/api/endpoints';
 import { ApiError } from '@/lib/api/errors';
+import { permitido } from '@/lib/auth/permisos';
 import { config } from '@/lib/config';
 import type * as T from '@/lib/types/api';
 
+/** Ruta del gateway que atiende cada familia de consultas (para saber si el rol puede pedirla). */
+const DASHBOARD: Record<string, string> = {
+  resumen: 'resumen',
+  entregas: 'entregas-diarias',
+  utilizacion: 'utilizacion-flota',
+  costoKm: 'costo-por-km',
+  eficiencia: 'eficiencia-combustible',
+  proyeccion: 'proyeccion-mantenimiento',
+  actividad: 'actividad-reciente',
+  ingresosMensual: 'ingresos/mensual',
+  ingresosAnual: 'ingresos/anual',
+  ingresosPedidos: 'ingresos/pedidos',
+};
+const RUTA_POR_FAMILIA: Record<string, (k: readonly unknown[]) => [string, string] | null> = {
+  gateway: () => ['GET', '/estado'],
+  clientes: (k) => ['GET', k[1] === 'detalle' ? '/clientes/x' : '/clientes'],
+  ubicaciones: () => ['GET', '/ubicaciones'],
+  vehiculos: () => ['GET', '/vehiculos'],
+  conductores: () => ['GET', '/conductores'],
+  flota: (k) => (k[1] === 'viabilidad' ? ['POST', '/viabilidad'] : ['GET', '/reservas/envio/x']),
+  envios: (k) => ['GET', k[1] === 'programados' ? '/envios/programados' : '/envios'],
+  rutasMaestras: () => ['GET', '/rutas-maestras'],
+  rutas: () => ['GET', '/rutas'],
+  seguimiento: () => ['GET', '/seguimiento/flota'],
+  simulaciones: () => ['GET', '/simulaciones'],
+  telemetria: () => ['GET', '/telemetria/x'],
+  mantenimiento: () => ['GET', '/programas/x'],
+  aduanas: () => ['GET', '/declaraciones'],
+  notificaciones: () => ['GET', '/notificaciones'],
+  preferencias: () => ['GET', '/preferencias/x'],
+  tarifas: () => ['GET', '/tarifas/x'],
+  costosRuta: () => ['GET', '/costos-ruta'],
+  facturas: () => ['GET', '/facturas'],
+  usuarios: () => ['GET', '/usuarios'],
+  pagos: (k) => ['GET', k[1] === 'porReembolsar' ? '/pagos/por-reembolsar' : '/pagos'],
+  facturasPedido: () => ['GET', '/facturas-pedido'],
+  cotizaciones: () => ['GET', '/cotizaciones'],
+  analitica: (k) => (DASHBOARD[String(k[1])] ? ['GET', `/dashboard/${DASHBOARD[String(k[1])]}`] : null),
+};
+
+function rutaDeClave(clave: QueryKey): [string, string] | null {
+  const f = RUTA_POR_FAMILIA[String(clave[0])];
+  return f ? f(clave) : null;
+}
+
+const sinPermiso = () =>
+  Promise.reject(new ApiError({ status: 403, codigo: 'SIN_PERMISO', mensaje: 'Su rol no tiene permiso para esta información.' }));
+
+/**
+ * useQuery que respeta la matriz de permisos: si el rol no puede pedir esa ruta, no se llama al
+ * gateway y la consulta queda en error 403 (las pantallas muestran «sin permiso» o la ocultan).
+ */
+function useQuery<TData>(opts: UseQueryOptions<TData, Error, TData, QueryKey>): UseQueryResult<TData, Error> {
+  const rol = useRol();
+  const ruta = rutaDeClave(opts.queryKey);
+  const ok = !ruta || permitido(rol, ruta[0], ruta[1]);
+  return useQueryBase(
+    ok
+      ? opts
+      : {
+          ...opts,
+          queryKey: [...opts.queryKey, 'sin-permiso'],
+          queryFn: sinPermiso,
+          enabled: opts.enabled === false ? false : true,
+          retry: false,
+          refetchInterval: false,
+          placeholderData: undefined,
+        },
+  );
+}
+
+/** ¿El rol de la sesión puede pedir esta ruta? (para ocultar secciones). */
+export function usePermitido(metodo: string, ruta: string): boolean {
+  return permitido(useRol(), metodo, ruta);
+}
+
 export const qk = {
   estado: ['gateway', 'estado'] as const,
+  usuarios: (f: object = {}) => ['usuarios', 'lista', f] as const,
+  partes: (id: string) => ['envios', 'partes', id] as const,
+  programados: (f: object = {}) => ['envios', 'programados', f] as const,
+  pagos: (f: object = {}) => ['pagos', 'lista', f] as const,
+  porReembolsar: ['pagos', 'porReembolsar'] as const,
+  pagoEnvio: (id: string) => ['pagos', 'envio', id] as const,
+  facturasPedido: (f: object = {}) => ['facturasPedido', 'lista', f] as const,
+  facturaPedidoEnvio: (id: string) => ['facturasPedido', 'envio', id] as const,
+  cotizaciones: (f: object = {}) => ['cotizaciones', 'lista', f] as const,
+  ingresosMensual: (anio?: number) => ['analitica', 'ingresosMensual', anio ?? 0] as const,
+  ingresosAnual: ['analitica', 'ingresosAnual'] as const,
+  ingresosPedidos: (f: object = {}) => ['analitica', 'ingresosPedidos', f] as const,
   clientes: (f: object = {}) => ['clientes', 'lista', f] as const,
   cliente: (id: string) => ['clientes', 'detalle', id] as const,
   ubicaciones: (f: object = {}) => ['ubicaciones', 'lista', f] as const,
@@ -131,7 +228,10 @@ export const useReserva = (envioId?: string, o?: Opc<T.ReservaFlota>) =>
   });
 
 // ---------- Envíos ----------
-export const useEnvios = (f: { estado?: string; cliente_id?: string } = {}, o?: Opc<T.Envio[]>) =>
+export const useEnvios = (
+  f: { estado?: string; cliente_id?: string; solo_pedidos?: boolean; envio_padre_id?: string } = {},
+  o?: Opc<T.Envio[]>,
+) =>
   useQuery({
     queryKey: qk.envios(f),
     queryFn: ({ signal }) => api.envios.listar(f, { signal }),
@@ -401,4 +501,89 @@ export const useActividadReciente = (limite = 20, o?: Opc<T.ActividadReciente[]>
     queryFn: ({ signal }) => api.analitica.actividadReciente(limite, { signal }),
     refetchInterval: 60000,
     ...o,
+  });
+
+// ---------- Usuarios ----------
+export const useUsuarios = (f: { rol?: string; limite?: number } = {}) =>
+  useQuery({
+    queryKey: qk.usuarios(f),
+    queryFn: ({ signal }) => api.usuarios.listar(f, { signal }),
+    placeholderData: keepPreviousData,
+  });
+
+// ---------- Pedidos divididos y programados ----------
+export const usePartes = (id?: string | null, o?: Opc<T.Envio[]>) =>
+  useQuery({
+    queryKey: qk.partes(id ?? ''),
+    queryFn: ({ signal }) => api.envios.partes(id!, { signal }),
+    enabled: !!id,
+    ...o,
+  });
+export const useProgramados = (f: { desde?: string; hasta?: string; incluir_activados?: boolean; limite?: number } = {}) =>
+  useQuery({
+    queryKey: qk.programados(f),
+    queryFn: ({ signal }) => api.envios.programados(f, { signal }),
+    refetchInterval: config.poll.listasMs * 3,
+    placeholderData: keepPreviousData,
+  });
+
+// ---------- Cobros ----------
+type FiltroPagina = { limite?: number; offset?: number };
+export const usePagos = (f: { cliente_id?: string; estado?: string; envio_id?: string } & FiltroPagina = {}) =>
+  useQuery({
+    queryKey: qk.pagos(f),
+    queryFn: ({ signal }) => api.cobros.pagos(f, { signal }),
+    placeholderData: keepPreviousData,
+  });
+export const usePorReembolsar = () =>
+  useQuery({
+    queryKey: qk.porReembolsar,
+    queryFn: ({ signal }) => api.cobros.porReembolsar({ limite: 200 }, { signal }),
+    refetchInterval: 30000,
+  });
+export const usePagoDeEnvio = (envioId?: string | null, o?: Opc<T.Pago>) =>
+  useQuery({
+    queryKey: qk.pagoEnvio(envioId ?? ''),
+    queryFn: ({ signal }) => api.cobros.pagoDeEnvio(envioId!, { signal }),
+    enabled: !!envioId,
+    retry: (n, e) => !es404(e) && n < 1,
+    ...o,
+  });
+export const useFacturasPedido = (
+  f: { cliente_id?: string; desde?: string; hasta?: string; estado?: string } & FiltroPagina = {},
+) =>
+  useQuery({
+    queryKey: qk.facturasPedido(f),
+    queryFn: ({ signal }) => api.cobros.facturas(f, { signal }),
+    placeholderData: keepPreviousData,
+  });
+export const useFacturaDeEnvio = (envioId?: string | null, o?: Opc<T.FacturaPedido>) =>
+  useQuery({
+    queryKey: qk.facturaPedidoEnvio(envioId ?? ''),
+    queryFn: ({ signal }) => api.cobros.facturaDeEnvio(envioId!, { signal }),
+    enabled: !!envioId,
+    retry: (n, e) => !es404(e) && n < 1,
+    ...o,
+  });
+export const useCotizaciones = (f: { cliente_id?: string; limite?: number } = {}) =>
+  useQuery({
+    queryKey: qk.cotizaciones(f),
+    queryFn: ({ signal }) => api.cobros.cotizaciones(f, { signal }),
+    placeholderData: keepPreviousData,
+  });
+
+// ---------- Ingresos ----------
+export const useIngresosMensual = (anio?: number) =>
+  useQuery({
+    queryKey: qk.ingresosMensual(anio),
+    queryFn: ({ signal }) => api.analitica.ingresosMensual(anio, { signal }),
+    placeholderData: keepPreviousData,
+  });
+export const useIngresosAnual = () =>
+  useQuery({ queryKey: qk.ingresosAnual, queryFn: ({ signal }) => api.analitica.ingresosAnual({ signal }) });
+export const useIngresosPedidos = (f: { mes?: string; estado?: string; cliente_id?: string } & FiltroPagina = {}) =>
+  useQuery({
+    queryKey: qk.ingresosPedidos(f),
+    queryFn: ({ signal }) => api.analitica.ingresosPedidos(f, { signal }),
+    placeholderData: keepPreviousData,
   });

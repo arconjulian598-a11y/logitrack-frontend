@@ -1,3 +1,4 @@
+import { usePuede } from '@/app/auth';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CalendarPlus, Cpu, Plus, Wrench } from 'lucide-react';
 import { useState } from 'react';
@@ -177,6 +178,7 @@ function DialogoIntervencion({ vehiculoId, abierto, onAbierto }: { vehiculoId: s
 }
 
 function PorVehiculo({ vehiculoId }: { vehiculoId: string }) {
+  const registra = usePuede('registrarMantenimiento');
   const p = useProgramas(vehiculoId);
   const i = useIntervenciones(vehiculoId);
   const [prog, setProg] = useState(false);
@@ -215,9 +217,11 @@ function PorVehiculo({ vehiculoId }: { vehiculoId: string }) {
         titulo="Programas"
         descripcion="Preventivos planificados y alertas detectadas por telemetría"
         acciones={
-          <Button size="sm" onClick={() => setProg(true)}>
-            <CalendarPlus /> Nuevo programa
-          </Button>
+          registra && (
+            <Button size="sm" onClick={() => setProg(true)}>
+              <CalendarPlus /> Nuevo programa
+            </Button>
+          )
         }
         cuerpo="p-0"
       >
@@ -231,9 +235,11 @@ function PorVehiculo({ vehiculoId }: { vehiculoId: string }) {
         titulo="Intervenciones realizadas"
         descripcion={i.data?.length ? `${i.data.length} intervención(es), ${pesos(total)} en total` : undefined}
         acciones={
-          <Button size="sm" onClick={() => setInterv(true)}>
-            <Plus /> Registrar intervención
-          </Button>
+          registra && (
+            <Button size="sm" onClick={() => setInterv(true)}>
+              <Plus /> Registrar intervención
+            </Button>
+          )
         }
         cuerpo="p-0"
       >
@@ -243,8 +249,8 @@ function PorVehiculo({ vehiculoId }: { vehiculoId: string }) {
           <DataTable etiqueta="Intervenciones" filas={i.data} columnas={colI} clave={(x) => x.id} cargando={i.isLoading} ordenInicial={{ id: 'fecha', dir: 'desc' }} vacio={<EmptyState titulo="Sin intervenciones registradas" compacto />} />
         )}
       </Panel>
-      <DialogoPrograma vehiculoId={vehiculoId} abierto={prog} onAbierto={setProg} />
-      <DialogoIntervencion vehiculoId={vehiculoId} abierto={interv} onAbierto={setInterv} />
+      {registra && <DialogoPrograma vehiculoId={vehiculoId} abierto={prog} onAbierto={setProg} />}
+      {registra && <DialogoIntervencion vehiculoId={vehiculoId} abierto={interv} onAbierto={setInterv} />}
     </div>
   );
 }
@@ -323,6 +329,7 @@ function Proyeccion({ onVehiculo }: { onVehiculo: (id: string) => void }) {
 }
 
 export default function MantenimientoPage() {
+  const verProyeccion = usePuede('dashboardFlota');
   const { valores, set } = useFiltrosUrl(['vehiculo'] as const);
   const vehiculos = useVehiculos();
   const navigate = useNavigate();
@@ -345,7 +352,7 @@ export default function MantenimientoPage() {
           </div>
         </Panel>
       )}
-      <Proyeccion onVehiculo={(id) => set('vehiculo', id)} />
+      {verProyeccion && <Proyeccion onVehiculo={(id) => set('vehiculo', id)} />}
       <div className="mt-6">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <div>

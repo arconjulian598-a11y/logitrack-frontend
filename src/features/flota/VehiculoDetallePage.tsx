@@ -1,3 +1,4 @@
+import { usePuede } from '@/app/auth';
 import { ChevronDown, Gauge, Map as MapIcon, Pencil, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
@@ -119,6 +120,7 @@ function Mantenimiento({ vehiculoId }: { vehiculoId: string }) {
 }
 
 export default function VehiculoDetallePage() {
+  const editaFlota = usePuede('editarFlota');
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const v = useVehiculo(id);
@@ -163,7 +165,7 @@ export default function VehiculoDetallePage() {
                 <Gauge /> Telemetría
               </Link>
             </Button>
-            <DropdownMenu>
+            {editaFlota && <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button>
                   Cambiar estado <ChevronDown />
@@ -177,10 +179,12 @@ export default function VehiculoDetallePage() {
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
-            </DropdownMenu>
-            <Button variant="primary" onClick={() => setEditar(true)}>
-              <Pencil /> Editar
-            </Button>
+            </DropdownMenu>}
+            {editaFlota && (
+              <Button variant="primary" onClick={() => setEditar(true)}>
+                <Pencil /> Editar
+              </Button>
+            )}
           </>
         }
       />

@@ -1,4 +1,4 @@
-import { AlertTriangle, CloudOff, Inbox, Loader2, RotateCw, ServerCrash } from 'lucide-react';
+import { AlertTriangle, CloudOff, Inbox, Loader2, Lock, RotateCw, ServerCrash } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/misc';
@@ -45,12 +45,15 @@ export function ErrorState({
   const e = error instanceof ApiError ? error : null;
   const caido = e?.esServicioCaido;
   const red = e?.esDeRed;
-  const titulo = red
+  const prohibido = e?.sinPermiso;
+  const titulo = prohibido
+    ? 'Sin permiso'
+    : red
     ? 'Sin conexión con el API Gateway'
     : caido
       ? `Servicio de ${SERVICIOS[e?.servicio ?? '']?.nombre.toLowerCase() ?? e?.servicio ?? 'backend'} no disponible`
       : 'No se pudo cargar la información';
-  const Icono = red ? CloudOff : caido ? ServerCrash : AlertTriangle;
+  const Icono = prohibido ? Lock : red ? CloudOff : caido ? ServerCrash : AlertTriangle;
   return (
     <div
       role="alert"
@@ -60,11 +63,13 @@ export function ErrorState({
         className,
       )}
     >
-      <Icono className="size-6 text-danger" aria-hidden />
+      <Icono className={cn('size-6', prohibido ? 'text-text-3' : 'text-danger')} aria-hidden />
       <p className="text-sm font-semibold text-text">{titulo}</p>
       <p className="max-w-lg text-[13px] text-text-2">{describirError(error)}</p>
-      {e?.requestId && <p className="text-xs text-text-3">Referencia de la petición: {e.requestId}</p>}
-      {reintentar && (
+      {e?.requestId && e.status < 500 && !prohibido && (
+        <p className="text-xs text-text-3">Referencia de la petición: {e.requestId}</p>
+      )}
+      {reintentar && !prohibido && (
         <Button size="sm" onClick={reintentar} className="mt-1">
           <RotateCw /> Reintentar
         </Button>
@@ -112,5 +117,14 @@ export function Limitacion({ children, titulo = 'Limitación del backend', class
 export function Nota({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div className={cn('rounded-md border border-rule bg-surface-2 px-3 py-2 text-[13px] text-text-2', className)}>{children}</div>
+  );
+}
+
+/** Pantalla para una sección que el rol del usuario no puede usar. */
+export function SinPermiso({ children }: { children?: ReactNode }) {
+  return (
+    <EmptyState titulo="No tiene permiso para ver esta sección" icono={<Lock />}>
+      {children ?? 'Su rol no incluye esta parte del sistema. Si la necesita, pídale acceso a un administrador.'}
+    </EmptyState>
   );
 }

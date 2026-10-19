@@ -10,6 +10,8 @@ const executablePath = process.env.PW_CHROMIUM_PATH || undefined;
 
 export default defineConfig({
   testDir: './e2e',
+  // La fase 2 (con login) se prueba aparte contra el gateway simulado: playwright.fase2.config.ts
+  testIgnore: ['fase2/**'],
   timeout: 90_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,

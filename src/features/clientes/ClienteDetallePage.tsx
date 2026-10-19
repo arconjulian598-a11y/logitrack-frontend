@@ -1,3 +1,4 @@
+import { usePuede } from '@/app/auth';
 import { PackagePlus, Pencil, Power } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
@@ -16,6 +17,7 @@ import { EditorPreferencia } from '../notificaciones/Preferencia';
 import { DialogoCliente } from './FormCliente';
 
 export default function ClienteDetallePage() {
+  const admin = usePuede('administrar');
   const { id = '' } = useParams();
   const c = useCliente(id);
   const envios = useEnvios({ cliente_id: id });
@@ -75,9 +77,11 @@ export default function ClienteDetallePage() {
             ]}
           />
         </Panel>
-        <Panel titulo="Tarifa" descripcion="Modelo de cobro (Facturación)">
-          <EditorTarifa clienteId={x.id} />
-        </Panel>
+        {admin && (
+          <Panel titulo="Tarifa" descripcion="Modelo de cobro mensual antiguo (Facturación)">
+            <EditorTarifa clienteId={x.id} />
+          </Panel>
+        )}
         <Panel titulo="Envíos del cliente" descripcion={envios.data ? `${envios.data.length} envío(s)` : undefined} cuerpo="p-0">
           {envios.error ? (
             <ErrorState error={envios.error} compacto reintentar={() => envios.refetch()} />
@@ -100,11 +104,11 @@ export default function ClienteDetallePage() {
             </ul>
           )}
         </Panel>
-        <div className="space-y-5">
+        {admin && <div className="space-y-5">
           <Panel titulo="Preferencias de notificación">
             <EditorPreferencia clienteId={x.id} />
           </Panel>
-          <Panel titulo="Facturas" cuerpo="p-0">
+          <Panel titulo="Facturas mensuales" cuerpo="p-0">
             {facturas.error ? (
               <ErrorState error={facturas.error} compacto reintentar={() => facturas.refetch()} />
             ) : !facturas.data ? (
@@ -127,7 +131,7 @@ export default function ClienteDetallePage() {
               </ul>
             )}
           </Panel>
-        </div>
+        </div>}
       </div>
       <DialogoCliente abierto={editar} onAbierto={setEditar} cliente={x} />
       <ConfirmDialog

@@ -190,6 +190,7 @@ export interface ViabilidadSolicitud {
   volumen_m3?: number | null;
   tipo_carga?: TipoCarga;
   es_hazmat?: boolean;
+  es_divisible?: boolean;
 }
 
 export type CausaInviabilidad =
@@ -221,6 +222,7 @@ export interface ReservaFlota {
 // ---------- Envíos (Shipment) ----------
 
 export type EstadoEnvio =
+  | 'programado'
   | 'pendiente'
   | 'sin_asignacion'
   | 'asignado'
@@ -228,7 +230,8 @@ export type EstadoEnvio =
   | 'con_incidencia'
   | 'retenido_aduana'
   | 'entregado'
-  | 'devuelto';
+  | 'devuelto'
+  | 'cancelado';
 
 export interface Envio {
   id: UUID;
@@ -261,6 +264,17 @@ export interface Envio {
   codigo_conductor: number | null;
   hora_estimada_llegada: ISODateTime | null;
   motivo_sin_asignacion: string | null;
+  /** En una parte de un pedido dividido: el id del pedido (padre). */
+  envio_padre_id?: UUID | null;
+  /** Número de la parte (1 = la más pesada). */
+  parte_numero?: number | null;
+  /** En el pedido (padre): cuántas partes tiene. `null` en un envío normal. */
+  partes_total?: number | null;
+  partes_entregadas?: number | null;
+  es_divisible?: boolean;
+  fecha_programada?: ISODateTime | null;
+  /** Precio del pedido en COP (solo el padre o un envío sin dividir; las partes lo traen null). */
+  monto_cop?: Decimal | null;
   creado_en: ISODateTime;
   actualizado_en: ISODateTime;
 }
@@ -277,6 +291,64 @@ export interface EnvioCrear {
   volumen_m3?: number | null;
   tipo_carga?: TipoCarga;
   es_hazmat?: boolean;
+  es_divisible?: boolean;
+  /** Futura; sin zona horaria se interpreta como hora de Colombia. El envío queda `programado`. */
+  fecha_programada?: string | null;
+  /** El `monto_cop` de POST /envios/cotizar (se exige cuando el cobro está activo). */
+  monto_aceptado_cop?: number | null;
+}
+
+/** Una parte del plan de división (el backend puede mandar solo el peso o un objeto). */
+export type PartePlan = number | string | { peso_kg?: Decimal; peso?: Decimal; parte_numero?: number; capacidad_kg?: Decimal; capacidad_vehiculo_kg?: Decimal; [k: string]: unknown };
+
+export interface ViabilidadCotizacion {
+  viable: boolean;
+  causa: string | null;
+  mensaje: string | null;
+  requiere_division?: boolean;
+  division_posible?: boolean;
+  capacidad_maxima_kg?: Decimal | null;
+  partes?: PartePlan[] | null;
+  desperdicio_kg?: Decimal | null;
+}
+
+export interface DesgloseCotizacion {
+  base_cop?: Decimal;
+  toneladas?: Decimal;
+  distancia_km?: Decimal;
+  cop_por_ton_km?: Decimal;
+  variable_cop?: Decimal;
+  minimo_cop?: Decimal;
+  aplico_minimo?: boolean;
+}
+
+/** Respuesta de POST /envios/cotizar (contrato 9.4). No crea nada. */
+export interface Cotizacion {
+  origen: string | null;
+  destino: string | null;
+  codigo_ruta: string | null;
+  distancia_km: Decimal | null;
+  duracion_horas: Decimal | null;
+  es_internacional: boolean | null;
+  peso_kg: Decimal;
+  es_divisible: boolean;
+  fecha_programada: ISODateTime | null;
+  monto_cop: Decimal | null;
+  moneda: 'COP' | string;
+  cotizacion: { cotizacion_id: UUID; monto_cop: Decimal; moneda: string; desglose?: DesgloseCotizacion | null } | null;
+  viabilidad: ViabilidadCotizacion | null;
+  puede_crear: boolean;
+  aviso: string | null;
+  facturacion_activa: boolean;
+}
+
+export interface EnvioCancelar {
+  motivo?: string | null;
+}
+
+export interface EnvioReprogramar {
+  fecha_programada: string;
+  motivo?: string | null;
 }
 
 export type EstadoManualEnvio = 'en_transito' | 'con_incidencia' | 'devuelto';
@@ -702,6 +774,9 @@ export interface ResumenEjecutivo {
   facturacion_periodo_actual: Decimal | null;
   programas_mantenimiento_vencidos: number;
   ultima_actualizacion_etl: ISODateTime | null;
+  /** Ingresos netos (cobrado − reembolsos) del mes y del año en curso (fase 2). */
+  ingresos_mes_actual_cop?: Decimal | null;
+  ingresos_anio_actual_cop?: Decimal | null;
 }
 
 export interface EntregasDiarias {
@@ -771,3 +846,112 @@ export interface ActividadReciente {
 
 /** Resultado libre del ciclo ETL (registros procesados por tabla). */
 export type ResultadoEtl = Record<string, unknown>;
+
+// ---------- Usuarios (Shipment, solo administrador) ----------
+
+export type { Rol } from '@/lib/auth/permisos';
+export type { Usuario } from '@/lib/auth/sesion';
+
+export interface UsuarioCrear {
+  email: string;
+  nombre: string;
+  password: string;
+  rol: import('@/lib/auth/permisos').Rol;
+  cliente_id?: UUID | null;
+  codigo_cliente?: number | null;
+}
+
+export interface UsuarioActualizar {
+  nombre?: string | null;
+  password?: string | null;
+  activo?: boolean | null;
+}
+
+export interface RespuestaLogin {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  usuario: import('@/lib/auth/sesion').Usuario;
+}
+
+// ---------- Cobro por pedido (Billing, fase 2) ----------
+
+export type EstadoPago = 'pendiente' | 'confirmado' | 'reembolsado';
+
+export interface Pago {
+  id: UUID;
+  envio_id: UUID;
+  codigo_envio: string | null;
+  cliente_id: UUID;
+  monto_cop: Decimal;
+  moneda: string;
+  estado: EstadoPago | string;
+  metodo: string;
+  referencia: string;
+  creado_en: ISODateTime;
+  confirmado_en: ISODateTime | null;
+  reembolsado_en: ISODateTime | null;
+}
+
+export interface PagoPorReembolsar extends Pago {
+  motivo: 'cancelado' | 'devuelto' | string | null;
+  detalle: string | null;
+  solicitado_en: ISODateTime | null;
+}
+
+export interface FacturaPedido {
+  id: UUID;
+  numero: string;
+  pago_id: UUID;
+  envio_id: UUID;
+  codigo_envio: string | null;
+  cliente_id: UUID;
+  concepto: string;
+  monto_cop: Decimal;
+  moneda: string;
+  estado: 'emitida' | 'anulada' | string;
+  emitida_en: ISODateTime;
+  anulada_en: ISODateTime | null;
+}
+
+/** Cotización registrada (GET /cotizaciones). Los campos exactos dependen del backend. */
+export interface CotizacionGuardada {
+  id?: UUID;
+  cotizacion_id?: UUID;
+  cliente_id?: UUID | null;
+  envio_id?: UUID | null;
+  origen?: string | null;
+  destino?: string | null;
+  codigo_ruta?: string | null;
+  distancia_km?: Decimal | null;
+  peso_kg?: Decimal | null;
+  monto_cop: Decimal;
+  moneda?: string;
+  creado_en?: ISODateTime;
+  [k: string]: unknown;
+}
+
+// ---------- Ingresos (Analytics, solo administrador) ----------
+
+export interface IngresoPeriodo {
+  periodo: string;
+  pedidos_cobrados: number;
+  bruto_cop: Decimal;
+  pedidos_reembolsados: number;
+  reembolsos_cop: Decimal;
+  neto_cop: Decimal;
+  ticket_promedio_cop: Decimal | null;
+}
+
+export interface IngresoPedido {
+  pago_id: UUID;
+  envio_id: UUID;
+  codigo_envio: string | null;
+  cliente_id: UUID;
+  monto_cop: Decimal;
+  estado_pago: EstadoPago | string;
+  factura_numero: string | null;
+  factura_estado: string | null;
+  confirmado_en: ISODateTime | null;
+  reembolsado_en: ISODateTime | null;
+}

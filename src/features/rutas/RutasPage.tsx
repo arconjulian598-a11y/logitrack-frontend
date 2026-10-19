@@ -1,3 +1,4 @@
+import { usePuede } from '@/app/auth';
 import { Calculator, PlayCircle, RotateCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -130,6 +131,7 @@ function CalcularRuta({ abierto, onAbierto }: { abierto: boolean; onAbierto: (v:
 }
 
 function RutasMaestras() {
+  const calcula = usePuede('editarUbicaciones'); // calcular rutas maestras: operador y administrador
   const { valores, set } = useFiltrosUrl(['origen', 'destino', 'fuente', 'limite'] as const);
   const origen = useDebounced(valores.origen.trim().toUpperCase(), 300);
   const destino = useDebounced(valores.destino.trim().toUpperCase(), 300);
@@ -189,9 +191,11 @@ function RutasMaestras() {
             ))}
           </NativeSelect>
         </Field>
-        <Button variant="primary" className="ml-auto" onClick={() => setCalcular(true)}>
-          <Calculator /> Calcular ruta
-        </Button>
+        {calcula && (
+          <Button variant="primary" className="ml-auto" onClick={() => setCalcular(true)}>
+            <Calculator /> Calcular ruta
+          </Button>
+        )}
       </div>
       <DataTable
         etiqueta="Rutas maestras"

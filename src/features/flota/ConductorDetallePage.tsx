@@ -1,3 +1,4 @@
+import { usePuede } from '@/app/auth';
 import { Link2, Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
@@ -12,6 +13,8 @@ import { numero, relativo } from '@/lib/format';
 import { DialogoConductor, DialogoVincular } from './FormConductor';
 
 export default function ConductorDetallePage() {
+  const editaFlota = usePuede('editarFlota');
+  const verEficiencia = usePuede('dashboard');
   const { id = '' } = useParams();
   const c = useConductor(id);
   const vehiculos = useVehiculos();
@@ -39,14 +42,16 @@ export default function ConductorDetallePage() {
         descripcion={`Código ${x.codigo_conductor}, licencia ${x.licencia_numero}`}
         acciones={
           <>
-            {!x.vehiculo_id && (
+            {editaFlota && !x.vehiculo_id && (
               <Button onClick={() => setVincular(true)}>
                 <Link2 /> Vincular vehículo
               </Button>
             )}
-            <Button variant="primary" onClick={() => setEditar(true)}>
-              <Pencil /> Editar
-            </Button>
+            {editaFlota && (
+              <Button variant="primary" onClick={() => setEditar(true)}>
+                <Pencil /> Editar
+              </Button>
+            )}
           </>
         }
       />
@@ -78,16 +83,18 @@ export default function ConductorDetallePage() {
               titulo="Sin vehículo"
               compacto
               accion={
-                <Button size="sm" onClick={() => setVincular(true)}>
-                  <Link2 /> Vincular vehículo
-                </Button>
+                editaFlota && (
+                  <Button size="sm" onClick={() => setVincular(true)}>
+                    <Link2 /> Vincular vehículo
+                  </Button>
+                )
               }
             >
               Un conductor sin vehículo no participa en las asignaciones.
             </EmptyState>
           )}
         </Panel>
-        <Panel titulo="Eficiencia de combustible" descripcion="Según la analítica (ETL periódica)">
+        {verEficiencia && <Panel titulo="Eficiencia de combustible" descripcion="Según la analítica (ETL periódica)">
           {eficiencia ? (
             <KeyValue
               items={[
@@ -101,7 +108,7 @@ export default function ConductorDetallePage() {
           ) : (
             <p className="text-[13px] text-text-2">{ef.isLoading ? 'Cargando…' : 'Aún no hay datos de eficiencia para este conductor.'}</p>
           )}
-        </Panel>
+        </Panel>}
         <Panel titulo="Envíos conducidos" descripcion={`${suyos.length} envío(s)`} cuerpo="p-0">
           {suyos.length === 0 ? (
             <EmptyState titulo="Sin envíos" compacto />
@@ -119,8 +126,8 @@ export default function ConductorDetallePage() {
           )}
         </Panel>
       </div>
-      <DialogoConductor abierto={editar} onAbierto={setEditar} conductor={x} />
-      <DialogoVincular abierto={vincular} onAbierto={setVincular} conductor={x} />
+      {editaFlota && <DialogoConductor abierto={editar} onAbierto={setEditar} conductor={x} />}
+      {editaFlota && <DialogoVincular abierto={vincular} onAbierto={setVincular} conductor={x} />}
     </>
   );
 }

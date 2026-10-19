@@ -1,3 +1,4 @@
+import { usePuede } from '@/app/auth';
 import { Plus, Search, ShieldCheck } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -112,6 +113,7 @@ function Auditoria() {
 }
 
 export default function ConductoresPage() {
+  const editaFlota = usePuede('editarFlota');
   const [nuevo, setNuevo] = useState(false);
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') ?? 'lista';
@@ -121,9 +123,11 @@ export default function ConductoresPage() {
         titulo="Conductores"
         descripcion="Cada conductor se liga de forma permanente a un vehículo. Al ligarlos se valida licencia, experiencia y certificación HAZMAT."
         acciones={
-          <Button variant="primary" onClick={() => setNuevo(true)}>
-            <Plus /> Registrar conductor
-          </Button>
+          editaFlota && (
+            <Button variant="primary" onClick={() => setNuevo(true)}>
+              <Plus /> Registrar conductor
+            </Button>
+          )
         }
       />
       <Tabs value={tab} onValueChange={(v) => setParams({ tab: v }, { replace: true })}>

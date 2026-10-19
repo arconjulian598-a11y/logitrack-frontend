@@ -1,3 +1,5 @@
+import { usePuede } from '@/app/auth';
+import { ApiError } from '@/lib/api/errors';
 import type { LatLngBoundsExpression } from 'leaflet';
 import { AlertOctagon, ArrowUpRight, FileWarning, Map as MapIcon, PackagePlus, RotateCw, Timer, Wrench } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -184,7 +186,8 @@ function NecesitaAtencion() {
   }
 
   const cargando = envios.isLoading || decl.isLoading;
-  const errores = [envios.error, decl.error, proy.error, vehiculos.error].filter(Boolean);
+  // Lo que el rol no puede ver (403) no cuenta como fuente caída
+  const errores = [envios.error, decl.error, proy.error, vehiculos.error].filter((e) => e && !(e instanceof ApiError && e.sinPermiso));
 
   return (
     <Panel titulo="Necesita atención" descripcion="Envíos detenidos, aduanas y mantenimiento" cuerpo="p-0" className="flex flex-col">
@@ -220,7 +223,8 @@ function NecesitaAtencion() {
 function Cifras() {
   const envios = useEnvios();
   const vehiculos = useVehiculos();
-  const resumen = useResumen();
+  const admin = usePuede('dashboard');
+  const resumen = useResumen({ enabled: admin });
   const lista = envios.data ?? [];
   const c = (e: string) => lista.filter((x) => x.estado === e).length;
   const libres = (vehiculos.data ?? []).filter((v) => v.estado === 'active').length;
@@ -248,18 +252,27 @@ function Cifras() {
               to="/envios?estado=retenido_aduana"
             />
             <Cifra valor={`${libres}/${vehiculos.data?.length ?? 0}`} etiqueta="Flota disponible" detalle="vehículos libres" to="/flota/vehiculos" />
-            <Cifra
-              valor={r?.tasa_cumplimiento_sla_global_pct != null ? porcentaje(r.tasa_cumplimiento_sla_global_pct, 1) : '—'}
-              etiqueta="Cumplimiento de SLA"
-              detalle={r?.ultima_actualizacion_etl ? `analítica, ${relativo(r.ultima_actualizacion_etl)}` : 'sin datos de analítica'}
-              to="/analitica"
-            />
-            <Cifra
-              valor={r?.facturacion_periodo_actual != null ? pesos(r.facturacion_periodo_actual) : '—'}
-              etiqueta="Facturación del periodo"
-              detalle="según la última ETL"
-              to="/facturacion"
-            />
+            {admin ? (
+              <>
+                <Cifra
+                  valor={r?.tasa_cumplimiento_sla_global_pct != null ? porcentaje(r.tasa_cumplimiento_sla_global_pct, 1) : '—'}
+                  etiqueta="Cumplimiento de SLA"
+                  detalle={r?.ultima_actualizacion_etl ? `analítica, ${relativo(r.ultima_actualizacion_etl)}` : 'sin datos de analítica'}
+                  to="/analitica"
+                />
+                <Cifra
+                  valor={r?.ingresos_mes_actual_cop != null ? pesos(r.ingresos_mes_actual_cop) : '—'}
+                  etiqueta="Ingresos del mes"
+                  detalle="netos, según la última ETL"
+                  to="/analitica"
+                />
+              </>
+            ) : (
+              <>
+                <Cifra valor={c('programado')} etiqueta="Programados" detalle="salen en una fecha futura" to="/calendario" />
+                <Cifra valor={c('entregado')} etiqueta="Entregados" detalle="histórico" tono="ok" to="/envios?estado=entregado" />
+              </>
+            )}
           </>
         )}
       </div>
@@ -270,6 +283,7 @@ function Cifras() {
 function TablaViajes() {
   const flota = useSeguimientoFlota();
   const navigate = useNavigate();
+  const puedeCrear = usePuede('crearEnvio');
   if (flota.error) return <ErrorState error={flota.error} reintentar={() => flota.refetch()} compacto />;
   if (flota.isLoading) return <LoadingState />;
   const filas = flota.data ?? [];
@@ -279,11 +293,13 @@ function TablaViajes() {
         titulo="No hay viajes en curso"
         compacto
         accion={
-          <Button size="sm" variant="primary" asChild>
-            <Link to="/envios/nuevo">
-              <PackagePlus /> Crear envío
-            </Link>
-          </Button>
+          puedeCrear && (
+            <Button size="sm" variant="primary" asChild>
+              <Link to="/envios/nuevo">
+                <PackagePlus /> Crear envío
+              </Link>
+            </Button>
+          )
         }
       />
     );
@@ -344,11 +360,13 @@ function Actividad() {
 
 export default function PanelPage() {
   const ahora = new Date().toISOString();
+  const puedeCrear = usePuede('crearEnvio');
+  const verActividad = usePuede('dashboard');
   return (
     <>
       <PageHeader
         titulo="Panel de operación"
-        descripcion={`Estado de la operación al ${fechaHora(ahora)}: las cifras de envíos y flota son en vivo; SLA y facturación vienen de la analítica periódica.`}
+        descripcion={`Estado de la operación al ${fechaHora(ahora)}: las cifras de envíos y flota son en vivo${verActividad ? '; SLA e ingresos vienen de la analítica periódica' : ''}.`}
         acciones={
           <>
             <Button asChild>
@@ -356,11 +374,13 @@ export default function PanelPage() {
                 <MapIcon /> Mapa en vivo
               </Link>
             </Button>
-            <Button variant="primary" asChild>
-              <Link to="/envios/nuevo">
-                <PackagePlus /> Nuevo envío
-              </Link>
-            </Button>
+            {puedeCrear && (
+              <Button variant="primary" asChild>
+                <Link to="/envios/nuevo">
+                  <PackagePlus /> Nuevo envío
+                </Link>
+              </Button>
+            )}
           </>
         }
       />
@@ -370,7 +390,7 @@ export default function PanelPage() {
           <NecesitaAtencion />
         </div>
         <Cifras />
-        <div className="grid gap-5 lg:grid-cols-2">
+        <div className={verActividad ? 'grid gap-5 lg:grid-cols-2' : 'grid gap-5'}>
           <Panel
             titulo="Progreso de los viajes"
             acciones={
@@ -382,7 +402,7 @@ export default function PanelPage() {
           >
             <TablaViajes />
           </Panel>
-          <Panel
+          {verActividad && <Panel
             titulo="Actividad reciente"
             acciones={
               <Link to="/analitica" className="inline-flex items-center gap-0.5 text-xs font-semibold text-primary hover:underline">
@@ -392,7 +412,7 @@ export default function PanelPage() {
             cuerpo="p-0"
           >
             <Actividad />
-          </Panel>
+          </Panel>}
         </div>
         <EstadosResumen />
       </div>

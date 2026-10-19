@@ -11,9 +11,13 @@ import { Plate } from '@/components/shared/Plate';
 import { EmptyState, ErrorState, Limitacion, LoadingState, Nota } from '@/components/shared/States';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/input';
+import { usePuede } from '@/app/auth';
 import {
   useActividadReciente,
   useCostoPorKm,
+  useIngresosAnual,
+  useIngresosMensual,
+  useIngresosPedidos,
   useEficienciaCombustible,
   useEntregasDiarias,
   useProyeccionMantenimiento,
@@ -22,9 +26,9 @@ import {
 } from '@/hooks/queries';
 import { useAccion } from '@/hooks/useAccion';
 import * as api from '@/lib/api/endpoints';
-import { clasificacionCombustible, estadoEnvio, humanizar, tipoVehiculo, urgencia } from '@/lib/dominio';
+import { clasificacionCombustible, estadoEnvio, estadoFacturaPedido, estadoPago, humanizar, tipoVehiculo, urgencia } from '@/lib/dominio';
 import { fecha, fechaCorta, fechaHora, num, numero, pesos, porcentaje, relativo } from '@/lib/format';
-import type { EficienciaCombustible } from '@/lib/types/api';
+import type { EficienciaCombustible, IngresoPedido, IngresoPeriodo } from '@/lib/types/api';
 
 function Resumen() {
   const r = useResumen();
@@ -42,7 +46,9 @@ function Resumen() {
       <Cifra valor={`${x.vehiculos_en_uso}/${x.total_vehiculos}`} etiqueta="Vehículos en uso" />
       <Cifra valor={x.flota_disponible} etiqueta="Flota disponible" />
       <Cifra valor={x.total_conductores} etiqueta="Conductores" />
-      <Cifra valor={x.facturacion_periodo_actual != null ? pesos(x.facturacion_periodo_actual) : '—'} etiqueta="Facturación del periodo" />
+      <Cifra valor={x.ingresos_mes_actual_cop != null ? pesos(x.ingresos_mes_actual_cop) : '—'} etiqueta="Ingresos del mes" detalle="netos" tono="ok" />
+      <Cifra valor={x.ingresos_anio_actual_cop != null ? pesos(x.ingresos_anio_actual_cop) : '—'} etiqueta="Ingresos del año" detalle="netos" />
+      <Cifra valor={x.facturacion_periodo_actual != null ? pesos(x.facturacion_periodo_actual) : '—'} etiqueta="Facturación mensual" detalle="medida antigua" />
       <Cifra valor={x.programas_mantenimiento_vencidos} etiqueta="Mantenimientos vencidos" tono={x.programas_mantenimiento_vencidos ? 'warn' : undefined} />
       <Cifra valor={x.ultima_actualizacion_etl ? relativo(x.ultima_actualizacion_etl) : 'Nunca'} etiqueta="Última ETL" detalle={fechaHora(x.ultima_actualizacion_etl)} />
     </div>
@@ -132,13 +138,13 @@ function Entregas() {
   );
 }
 
-function Flota() {
+function Flota({ conCostos = true }: { conCostos?: boolean }) {
   const u = useUtilizacionFlota();
   const c = useCostoPorKm();
   const enUso = (u.data ?? []).filter((x) => x.en_uso).length;
   const costos = (c.data ?? []).map((x) => ({ tipo: tipoVehiculo(x.tipo_vehiculo), costo: num(x.costo_promedio_por_km) ?? 0, rutas: x.num_rutas_con_costo }));
   return (
-    <div className="grid gap-5 xl:grid-cols-2">
+    <div className={conCostos ? 'grid gap-5 xl:grid-cols-2' : 'grid gap-5'}>
       <Panel titulo="Utilización de la flota" descripcion={u.data ? `${enUso} de ${u.data.length} vehículos en uso` : undefined} cuerpo="p-0">
         {u.error ? (
           <ErrorState error={u.error} compacto reintentar={() => u.refetch()} />
@@ -167,7 +173,7 @@ function Flota() {
           </ul>
         )}
       </Panel>
-      <Panel>
+      {conCostos && <Panel>
         {c.error ? (
           <ErrorState error={c.error} compacto reintentar={() => c.refetch()} />
         ) : !c.data ? (
@@ -194,7 +200,7 @@ function Flota() {
             </BarChart>
           </ChartFrame>
         )}
-      </Panel>
+      </Panel>}
     </div>
   );
 }
@@ -326,7 +332,179 @@ function Actividad() {
   );
 }
 
+
+const NOMBRES_MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+function nombrePeriodo(p: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(p);
+  return m ? `${NOMBRES_MES[Number(m[2]) - 1] ?? m[2]} ${m[1]}` : p;
+}
+
+/** Ingresos por pedido (contrato 9.9): bruto = cobrado en el mes, neto = bruto − reembolsos. No se recalculan aquí. */
+function Ingresos() {
+  const anioActual = new Date().getFullYear();
+  const [anio, setAnio] = useState(anioActual);
+  const [mes, setMes] = useState('');
+  const [estado, setEstado] = useState('');
+  const m = useIngresosMensual(anio);
+  const a = useIngresosAnual();
+  const ped = useIngresosPedidos({ mes: mes || undefined, estado: estado || undefined, limite: 500 });
+  const datos = (m.data ?? []).map((x) => ({ periodo: nombrePeriodo(x.periodo), bruto: num(x.bruto_cop) ?? 0, reembolsos: num(x.reembolsos_cop) ?? 0 }));
+  const filaPeriodo = (x: IngresoPeriodo) => [
+    nombrePeriodo(x.periodo),
+    x.pedidos_cobrados,
+    pesos(x.bruto_cop),
+    x.pedidos_reembolsados,
+    pesos(x.reembolsos_cop),
+    pesos(x.neto_cop),
+    pesos(x.ticket_promedio_cop),
+  ];
+  const columnasPedido: Columna<IngresoPedido>[] = [
+    { id: 'pedido', titulo: 'Pedido', celda: (x) => <Link className="font-semibold text-primary hover:underline" to={`/envios/${x.envio_id}`}>{x.codigo_envio ?? 'Ver'}</Link>, orden: (x) => x.codigo_envio },
+    { id: 'monto', titulo: 'Monto', celda: (x) => <span className="tabular font-semibold">{pesos(x.monto_cop)}</span>, orden: (x) => num(x.monto_cop), alinear: 'right' },
+    { id: 'pago', titulo: 'Pago', celda: (x) => <EstadoBadge def={estadoPago(x.estado_pago)} />, orden: (x) => x.estado_pago },
+    { id: 'factura', titulo: 'Factura', celda: (x) => (x.factura_numero ? <span className="inline-flex items-center gap-2">{x.factura_numero} <EstadoBadge def={estadoFacturaPedido(x.factura_estado)} /></span> : '—'), ocultarBajo: 'md' },
+    { id: 'cobrado', titulo: 'Cobrado', celda: (x) => fechaHora(x.confirmado_en), orden: (x) => x.confirmado_en, ocultarBajo: 'sm' },
+    { id: 'reembolsado', titulo: 'Reembolsado', celda: (x) => fechaHora(x.reembolsado_en, '—'), orden: (x) => x.reembolsado_en, ocultarBajo: 'lg' },
+  ];
+  const selectorAnio = (
+    <NativeSelect value={String(anio)} onChange={(x) => setAnio(Number(x.target.value))} className="h-7 w-24 text-xs" aria-label="Año">
+      {[0, 1, 2, 3].map((d) => (
+        <option key={d} value={anioActual - d}>
+          {anioActual - d}
+        </option>
+      ))}
+    </NativeSelect>
+  );
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <Panel>
+          {m.error ? (
+            <ErrorState error={m.error} reintentar={() => m.refetch()} compacto />
+          ) : !m.data ? (
+            <LoadingState />
+          ) : datos.length === 0 ? (
+            <div>
+              <div className="flex justify-end">{selectorAnio}</div>
+              <EmptyState titulo={`Sin ingresos en ${anio}`} compacto>
+                Los ingresos salen de los pagos de pedidos y se calculan en cada ciclo de la ETL.
+              </EmptyState>
+            </div>
+          ) : (
+            <ChartFrame
+              titulo={`Ingresos por mes, ${anio}`}
+              descripcion="Cobrado (bruto) y reembolsado en cada mes, en pesos. Neto = bruto − reembolsos (ver tabla)."
+              acciones={selectorAnio}
+              leyenda={[
+                { nombre: 'Bruto', color: C.s1 },
+                { nombre: 'Reembolsos', color: C.s2 },
+              ]}
+              tabla={{ columnas: ['Mes', 'Pedidos cobrados', 'Bruto', 'Reembolsados', 'Reembolsos', 'Neto', 'Ticket promedio'], filas: (m.data ?? []).map(filaPeriodo) }}
+            >
+              <BarChart data={datos} margin={{ top: 8, right: 8, left: 8, bottom: 0 }} barGap={2}>
+                <CartesianGrid {...rejilla} />
+                <XAxis dataKey="periodo" {...ejeX} />
+                <YAxis {...ejeY} width={72} tickFormatter={(v: number) => numero(v)} />
+                <Tooltip cursor={{ fill: 'var(--neutral-soft)' }} content={<TooltipContenido formato={(v) => pesos(v)} />} />
+                <Bar dataKey="bruto" name="Bruto" fill={C.s1} radius={[4, 4, 0, 0]} maxBarSize={28} />
+                <Bar dataKey="reembolsos" name="Reembolsos" fill={C.s2} radius={[4, 4, 0, 0]} maxBarSize={28} />
+              </BarChart>
+            </ChartFrame>
+          )}
+        </Panel>
+        <Panel titulo="Ingresos por año" cuerpo="p-0">
+          {a.error ? (
+            <ErrorState error={a.error} reintentar={() => a.refetch()} compacto />
+          ) : !a.data ? (
+            <LoadingState />
+          ) : a.data.length === 0 ? (
+            <EmptyState titulo="Sin ingresos registrados" compacto />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-rule text-left text-xs text-text-2">
+                    <th className="px-4 py-2 font-semibold">Año</th>
+                    <th className="px-4 py-2 text-right font-semibold">Bruto</th>
+                    <th className="px-4 py-2 text-right font-semibold">Reembolsos</th>
+                    <th className="px-4 py-2 text-right font-semibold">Neto</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-rule">
+                  {a.data.map((x) => (
+                    <tr key={x.periodo}>
+                      <td className="px-4 py-2 font-semibold">{x.periodo}</td>
+                      <td className="tabular px-4 py-2 text-right">{pesos(x.bruto_cop)}</td>
+                      <td className="tabular px-4 py-2 text-right">{pesos(x.reembolsos_cop)}</td>
+                      <td className="tabular px-4 py-2 text-right font-semibold">{pesos(x.neto_cop)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      </div>
+      <Panel
+        titulo="Ingresos por pedido"
+        acciones={
+          <div className="flex flex-wrap gap-2">
+            <NativeSelect value={mes} onChange={(x) => setMes(x.target.value)} className="h-8 w-36" aria-label="Mes">
+              <option value="">Todos los meses</option>
+              {(m.data ?? []).map((x) => (
+                <option key={x.periodo} value={x.periodo}>
+                  {nombrePeriodo(x.periodo)}
+                </option>
+              ))}
+            </NativeSelect>
+            <NativeSelect value={estado} onChange={(x) => setEstado(x.target.value)} className="h-8 w-36" aria-label="Estado del pago">
+              <option value="">Todos</option>
+              <option value="confirmado">Pagados</option>
+              <option value="reembolsado">Reembolsados</option>
+              <option value="pendiente">Pendientes</option>
+            </NativeSelect>
+          </div>
+        }
+        cuerpo="p-0"
+      >
+        <DataTable
+          etiqueta="Ingresos por pedido"
+          filas={ped.data}
+          columnas={columnasPedido}
+          clave={(x) => x.pago_id}
+          cargando={ped.isLoading}
+          error={ped.error}
+          reintentar={() => ped.refetch()}
+          ordenInicial={{ id: 'cobrado', dir: 'desc' }}
+          vacio={<EmptyState titulo="Sin pedidos con estos filtros" compacto />}
+        />
+      </Panel>
+    </div>
+  );
+}
+
+function DashboardFlota() {
+  return (
+    <>
+      <PageHeader
+        titulo="Dashboard de flota"
+        descripcion="Utilización de los vehículos y proyección de mantenimiento. Lo calcula un proceso periódico (hasta 5 minutos de retraso)."
+      />
+      <div className="space-y-5">
+        <Flota conCostos={false} />
+        <ProyeccionResumen />
+      </div>
+    </>
+  );
+}
+
 export default function AnaliticaPage() {
+  const completo = usePuede('dashboard');
+  if (!completo) return <DashboardFlota />;
+  return <DashboardCompleto />;
+}
+
+function DashboardCompleto() {
   const [resultado, setResultado] = useState<Record<string, unknown> | null>(null);
   const etl = useAccion({
     fn: () => api.analitica.ejecutarEtl(),
@@ -337,11 +515,11 @@ export default function AnaliticaPage() {
   return (
     <>
       <PageHeader
-        titulo="Analítica"
-        descripcion="Indicadores calculados por un proceso ETL periódico a partir de los demás servicios. No son en tiempo real."
+        titulo="Dashboard e ingresos"
+        descripcion="Indicadores e ingresos calculados por un proceso periódico (cada 5 minutos) a partir de los demás servicios. No son en tiempo real."
         acciones={
           <Button variant="primary" onClick={() => etl.mutate()} cargando={etl.isPending}>
-            <DatabaseZap /> Ejecutar ETL ahora
+            <DatabaseZap /> Actualizar ahora
           </Button>
         }
       />
@@ -365,6 +543,12 @@ export default function AnaliticaPage() {
         <Panel titulo="Resumen ejecutivo">
           <Resumen />
         </Panel>
+        <section aria-labelledby="titulo-ingresos" className="space-y-3">
+          <h2 id="titulo-ingresos" className="text-base font-bold text-text">
+            Ingresos
+          </h2>
+          <Ingresos />
+        </section>
         <Entregas />
         <Flota />
         <Eficiencia />
