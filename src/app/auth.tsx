@@ -5,6 +5,7 @@ import { SinPermiso } from '@/components/shared/States';
 import { auth } from '@/lib/api/endpoints';
 import { ApiError } from '@/lib/api/errors';
 import { puede, type Accion, type Rol } from '@/lib/auth/permisos';
+import type { RegistroCuenta } from '@/lib/types/api';
 import {
   actualizarUsuario,
   cerrarSesion,
@@ -18,6 +19,8 @@ import {
 interface ValorAuth {
   sesion: Sesion | null;
   entrar: (email: string, password: string) => Promise<Usuario>;
+  /** POST /auth/registro y entra con la cuenta nueva (el token se guarda igual que en el login). */
+  registrarse: (datos: RegistroCuenta) => Promise<Usuario>;
   salir: () => void;
 }
 
@@ -72,6 +75,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sesion,
     entrar: async (email, password) => {
       const r = await auth.login(email.trim(), password);
+      iniciarSesion(r);
+      return r.usuario;
+    },
+    registrarse: async (datos) => {
+      const r = await auth.registro(datos);
       iniciarSesion(r);
       return r.usuario;
     },

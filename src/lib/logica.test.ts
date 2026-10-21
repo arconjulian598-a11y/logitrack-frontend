@@ -61,7 +61,7 @@ describe('reglas del dominio', () => {
 });
 
 describe('capa de API', () => {
-  it('expone las 83 rutas de la primera versión más las de la fase 2 (y el registro autorizado)', () => {
+  it('expone las 83 rutas de la primera versión más las de la fase 2 (y el registro público)', () => {
     const total = Object.values(endpoints).reduce((n, grupo) => n + Object.keys(grupo).length, 0);
     expect(total).toBe(105);
   });

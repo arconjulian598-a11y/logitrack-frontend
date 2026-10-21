@@ -92,6 +92,10 @@ def _iso(d):
 def reiniciar():
     E.clear()
     E["tokens"] = {}
+    E["registro_personal"] = True
+    E["registro_intentos"] = 0
+    E["registro_intentos_max"] = 20
+    E["registro_con_authorization"] = False
     E["dormir"] = 0
     E["tarifa"] = {"base": 20000, "minimo": 50000, "ton_km": 280}
     E["seq_envio"] = 40
@@ -156,7 +160,9 @@ async def puerta(request: Request, llamar):
     if not ruta.startswith("/api/v1/"):
         return JSONResponse(status_code=404, content={"detail": "No encontrado"})
     resto = ruta[len("/api/v1"):]
-    if resto.rstrip("/") == "/auth/login":
+    if resto.rstrip("/") in ("/auth/login", "/auth/registro"):
+        if request.headers.get("authorization"):
+            E["registro_con_authorization"] = True  # el registro debe ir sin Authorization
         return await llamar(request)
     cab = request.headers.get("authorization") or ""
     if not cab.lower().startswith("bearer "):
@@ -231,6 +237,73 @@ async def login(request: Request):
     E["tokens"][token] = u["id"]
     u["ultimo_acceso"] = _iso(_ahora())
     return {"access_token": token, "token_type": "bearer", "expires_in": 28800, "usuario": _publico(u)}
+
+
+CODIGO_ACCESO = "LT-ACCESO-2026"
+
+
+@app.post("/__mock/registro")
+def _registro(personal: bool = True, intentos: int = 20):
+    E["registro_personal"] = personal
+    E["registro_intentos_max"] = intentos
+    E["registro_intentos"] = 0
+    return {"ok": True, "con_authorization": E.get("registro_con_authorization", False)}
+
+
+@app.post("/api/v1/auth/registro")
+async def registro(request: Request):
+    E["registro_intentos"] = E.get("registro_intentos", 0) + 1
+    if E["registro_intentos"] > E.get("registro_intentos_max", 20):
+        return _error(429, "DEMASIADOS_INTENTOS", "Demasiados intentos de registro; espere unos minutos")
+    b = await request.json()
+    rol = b.get("rol")
+    faltan = [c for c in ("nombre", "email", "password") if not b.get(c)]
+    if rol == C:
+        faltan += [c for c in ("tipo_documento", "numero_documento") if not b.get(c)]
+        if "codigo_cliente" in b or "codigo_acceso" in b:
+            return JSONResponse(status_code=422, content={"detail": [{"loc": ["body", "codigo_cliente"], "msg": "Extra inputs are not permitted"}]})
+    elif rol in (O, G):
+        faltan += [c for c in ("codigo_acceso",) if not b.get(c)]
+        if "numero_documento" in b:
+            return JSONResponse(status_code=422, content={"detail": [{"loc": ["body", "numero_documento"], "msg": "Extra inputs are not permitted"}]})
+    else:
+        return JSONResponse(status_code=422, content={"detail": [{"loc": ["body", "rol"], "msg": "Input should be 'cliente', 'operador' or 'gestor_flota'"}]})
+    errores = [{"loc": ["body", c], "msg": "Field required", "type": "missing"} for c in faltan]
+    if b.get("password") and len(b["password"]) < 8:
+        errores.append({"loc": ["body", "password"], "msg": "String should have at least 8 characters"})
+    if b.get("telefono") and not str(b["telefono"]).replace("+", "").replace(" ", "").isdigit():
+        errores.append({"loc": ["body", "telefono"], "msg": "Value error, El teléfono solo admite números"})
+    if errores:
+        return JSONResponse(status_code=422, content={"detail": errores})
+    email = str(b["email"]).strip().lower()
+    if rol in (O, G):
+        if not E.get("registro_personal", True):
+            return _error(403, "REGISTRO_PERSONAL_DESHABILITADO", "El registro de personal está deshabilitado")
+        if b["codigo_acceso"] != CODIGO_ACCESO:
+            return _error(403, "CODIGO_ACCESO_INVALIDO", "Código de acceso inválido")
+    if any(u["email"] == email for u in E["usuarios"].values()):
+        return _error(409, "CORREO_YA_REGISTRADO", "Ya existe una cuenta con ese correo")
+    cliente = None
+    if rol == C:
+        if any(c["tipo_documento"] == b["tipo_documento"] and c["numero_documento"] == b["numero_documento"] for c in E["clientes"].values()):
+            return _error(409, "CLIENTE_YA_REGISTRADO", "Ese documento ya está registrado como cliente")
+        cid = str(uuid.uuid4())
+        cliente = {
+            "id": cid, "codigo_cliente": 1000000000 + len(E["clientes"]) + 1, "nombre": b["nombre"],
+            "tipo_documento": b["tipo_documento"], "numero_documento": b["numero_documento"], "email": email,
+            "telefono": b.get("telefono"), "direccion": b.get("direccion"), "activo": True, "es_historico": False,
+            "creado_en": _iso(_ahora()),
+        }
+        E["clientes"][cid] = cliente
+    uid = str(uuid.uuid4())
+    u = E["usuarios"][uid] = {
+        "id": uid, "email": email, "nombre": b["nombre"], "rol": rol,
+        "cliente_id": cliente["id"] if cliente else None, "codigo_cliente": cliente["codigo_cliente"] if cliente else None,
+        "activo": True, "ultimo_acceso": _iso(_ahora()), "creado_en": _iso(_ahora()), "_password": b["password"],
+    }
+    token = secrets.token_urlsafe(24)
+    E["tokens"][token] = uid
+    return JSONResponse(status_code=201, content={"access_token": token, "expires_in": 28800, "usuario": _publico(u)})
 
 
 @app.get("/api/v1/auth/me")

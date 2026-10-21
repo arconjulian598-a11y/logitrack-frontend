@@ -238,7 +238,7 @@ export default function UsuariosPage() {
     <>
       <PageHeader
         titulo="Usuarios"
-        descripcion="Cuentas para entrar a LogiTrack. No hay registro público: solo un administrador crea cuentas."
+        descripcion="Cuentas para entrar a LogiTrack. Los clientes pueden registrarse solos; operadores y gestores de flota se registran con un código de acceso del administrador, y los administradores solo se crean aquí."
         acciones={
           <Button variant="primary" onClick={() => setCrear(true)}>
             <UserPlus /> Nueva cuenta

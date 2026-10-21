@@ -867,6 +867,26 @@ export interface UsuarioActualizar {
   activo?: boolean | null;
 }
 
+/** POST /auth/registro (público). El administrador no se registra: lo crea otro administrador. */
+export type RegistroCuenta =
+  | {
+      rol: 'cliente';
+      nombre: string;
+      email: string;
+      password: string;
+      tipo_documento: TipoDocumento;
+      numero_documento: string;
+      telefono?: string;
+      direccion?: string;
+    }
+  | {
+      rol: 'operador' | 'gestor_flota';
+      nombre: string;
+      email: string;
+      password: string;
+      codigo_acceso: string;
+    };
+
 export interface RespuestaLogin {
   access_token: string;
   token_type: string;

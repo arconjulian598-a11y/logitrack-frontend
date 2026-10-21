@@ -22,6 +22,9 @@ export const auth = {
   /** POST /auth/login: la única ruta pública. Se reintenta si el backend está despertando. */
   login: (email: string, password: string) =>
     http.post<T.RespuestaLogin>('/auth/login', { email, password }, { publica: true, reintentarArranque: true, timeoutMs: 70000 }),
+  /** POST /auth/registro: registro público (sin Authorization). 201 con lo mismo que el login. Nunca se reintenta solo. */
+  registro: (body: T.RegistroCuenta) =>
+    http.post<T.RespuestaLogin>('/auth/registro', body, { publica: true, timeoutMs: 70000 }),
   /** GET /auth/me: usuario de la sesión (rol para el menú). */
   yo: (o?: S) => http.get<T.Usuario>('/auth/me', { ...o, timeoutMs: 70000 }),
 };
@@ -31,9 +34,6 @@ export const usuarios = {
   listar: (q: { rol?: string; limite?: number } = {}, o?: S) => http.get<T.Usuario[]>('/usuarios', { ...o, query: q }),
   crear: (body: T.UsuarioCrear) => http.post<T.Usuario>('/usuarios', body),
   actualizar: (id: string, body: T.UsuarioActualizar) => http.patch<T.Usuario>(`/usuarios/${seg(id)}`, body),
-  /** Registro autorizado por un administrador: usa SU token (de un solo uso) y no la sesión abierta. */
-  crearConAutorizacion: (body: T.UsuarioCrear, tokenAdministrador: string) =>
-    http.post<T.Usuario>('/usuarios', body, { publica: true, headers: { Authorization: `Bearer ${tokenAdministrador}` } }),
 };
 
 // ---------- Shipment · Clientes ----------

@@ -307,47 +307,163 @@ test.describe('usuarios', () => {
 });
 
 test.describe('registro y cambio de cuenta', () => {
-  test('registrarse con autorización del administrador y entrar con la cuenta nueva', async ({ page }) => {
+  test('registro de cliente: sin código de cliente ni credenciales de otros, entra y ve su código', async ({ page }) => {
     const v = vigilar(page);
+    const cuerpos: unknown[] = [];
+    page.on('request', (r) => {
+      if (r.url().endsWith('/auth/registro')) cuerpos.push({ cuerpo: r.postDataJSON(), auth: r.headers()['authorization'] ?? null });
+    });
     await page.goto('/login');
+    // El login sigue siendo solo correo y contraseña
+    await expect(page.locator('form input:not([type=hidden])')).toHaveCount(2);
     await page.getByRole('link', { name: 'Registrarse' }).click();
     await expect(page).toHaveURL(/\/registro$/);
+
+    // Nada de código de cliente ni autorización del administrador; rol Cliente por defecto y sin Administrador
+    await expect(page.getByText(/Autorización del administrador/)).toHaveCount(0);
+    await expect(page.getByLabel(/Código de su empresa/)).toHaveCount(0);
+    await expect(page.locator('#r-rol')).toHaveValue('cliente');
+    await expect(page.locator('#r-rol option')).toHaveText(['Cliente', 'Operador', 'Gestor de flota']);
+    await expect(page.locator('#r-codigo_acceso')).toHaveCount(0);
+    await expect(page.locator('#r-tipo_documento option')).toHaveCount(4);
+
+    // Validación en el navegador
     await page.locator('#r-nombre').fill('Pedro Despachos');
     await page.locator('#r-email').fill('pedro@frutas.test');
+    await page.locator('#r-password').fill('corta');
+    await page.locator('#r-confirmar').fill('otra');
+    await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
+    await expect(page.getByText('Mínimo 8 caracteres.').first()).toBeVisible();
+    await expect(page.getByText('Las contraseñas no coinciden.')).toBeVisible();
+    await expect(page.getByText('Escriba el número de documento.')).toBeVisible();
+    expect(cuerpos).toHaveLength(0);
+
+    // 422 del backend bajo su campo
     await page.locator('#r-password').fill('clave-pedro-1');
     await page.locator('#r-confirmar').fill('clave-pedro-1');
-    await page.locator('#r-codigo').fill('1000000002');
-
-    // Sin autorización válida no se crea
-    await page.locator('#r-admin-email').fill(CUENTAS.operador.email);
-    await page.locator('#r-admin-password').fill(CUENTAS.operador.password);
+    await page.locator('#r-tipo_documento').selectOption('CC');
+    await page.locator('#r-numero_documento').fill('1067123456');
+    await page.locator('#r-telefono').fill('abc');
     await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
-    await expect(page.getByText('Esa cuenta no es de administrador: no puede autorizar registros.')).toBeVisible();
-    await page.locator('#r-admin-email').fill(CUENTAS.administrador.email);
-    await page.locator('#r-admin-password').fill('equivocada');
-    await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
-    await expect(page.getByText('Correo o contraseña del administrador incorrectos.')).toBeVisible();
+    await expect(page.getByText('El teléfono solo admite números')).toBeVisible();
 
-    await page.locator('#r-admin-password').fill(CUENTAS.administrador.password);
+    // Documento de un cliente que ya existe
+    await page.locator('#r-telefono').fill('3001234567');
+    await page.locator('#r-direccion').fill('Calle 10 # 5-20, Montería');
+    await page.locator('#r-tipo_documento').selectOption('NIT');
+    await page.locator('#r-numero_documento').fill('900123451');
+    await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
+    await expect(page.getByText(/Si ya es cliente, pida al administrador que le cree el acceso/)).toBeVisible();
+
+    // Correcto: entra directo y ve su código de cliente
+    await page.locator('#r-tipo_documento').selectOption('CC');
+    await page.locator('#r-numero_documento').fill('1067123456');
     await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
     await expect(page.getByRole('heading', { name: 'Mis envíos' })).toBeVisible();
+    await expect(page.getByText(/^Su código de cliente es 100000000\d$/)).toBeVisible();
     await expect(page.getByRole('button', { name: /Cuenta de Pedro Despachos/ })).toBeVisible();
-    // La sesión del administrador no quedó guardada: la abierta es la de Pedro
     expect(await page.evaluate(() => sessionStorage.getItem('logitrack_sesion'))).toContain('pedro@frutas.test');
+    expect(await page.evaluate(() => localStorage.getItem('logitrack_sesion'))).toBeNull();
 
-    // Mismo correo otra vez: ya existe
+    const ultimo = cuerpos.at(-1) as { cuerpo: Record<string, unknown>; auth: string | null };
+    expect(ultimo.auth).toBeNull();
+    expect(ultimo.cuerpo).toEqual({
+      rol: 'cliente',
+      nombre: 'Pedro Despachos',
+      email: 'pedro@frutas.test',
+      password: 'clave-pedro-1',
+      tipo_documento: 'CC',
+      numero_documento: '1067123456',
+      telefono: '3001234567',
+      direccion: 'Calle 10 # 5-20, Montería',
+    });
+
+    // Mismo correo otra vez
     await page.getByRole('button', { name: 'Cerrar sesión', exact: true }).click();
     await page.goto('/registro');
     await page.locator('#r-nombre').fill('Pedro Otra Vez');
     await page.locator('#r-email').fill('pedro@frutas.test');
     await page.locator('#r-password').fill('clave-pedro-1');
     await page.locator('#r-confirmar').fill('clave-pedro-1');
-    await page.locator('#r-rol').selectOption('operador');
-    await page.locator('#r-admin-email').fill(CUENTAS.administrador.email);
-    await page.locator('#r-admin-password').fill(CUENTAS.administrador.password);
+    await page.locator('#r-numero_documento').fill('5550001');
     await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
-    await expect(page.getByText('Ya existe una cuenta con ese correo.')).toBeVisible();
+    await expect(page.getByText(/Ya existe una cuenta con ese correo/)).toBeVisible();
     await v.verificar();
+  });
+
+  test('registro de operador y gestor con código de acceso; errores 403 y 429', async ({ page }) => {
+    const cuerpos: Record<string, unknown>[] = [];
+    page.on('request', (r) => {
+      if (r.url().endsWith('/auth/registro')) cuerpos.push(r.postDataJSON());
+    });
+    await page.goto('/registro');
+    await page.locator('#r-rol').selectOption('operador');
+    await expect(page.locator('#r-numero_documento')).toHaveCount(0);
+    await expect(page.getByLabel('Código de acceso (lo entrega el administrador)')).toBeVisible();
+    await page.locator('#r-nombre').fill('Olga Operaciones');
+    await page.locator('#r-email').fill('olga@logitrack.test');
+    await page.locator('#r-password').fill('clave-olga-1');
+    await page.locator('#r-confirmar').fill('clave-olga-1');
+    await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
+    await expect(page.getByText('Escriba el código de acceso que le dio el administrador.')).toBeVisible();
+
+    await page.locator('#r-codigo_acceso').fill('NO-SIRVE');
+    await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
+    await expect(page.getByText(/El código de acceso no es válido/)).toBeVisible();
+    // Sigue en el registro (un 403 aquí no es "sin permiso" ni cierra nada)
+    await expect(page).toHaveURL(/\/registro$/);
+
+    await control(page, 'registro?personal=false');
+    await page.locator('#r-codigo_acceso').fill('LT-ACCESO-2026');
+    await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
+    await expect(page.getByText(/El registro de operadores y gestores de flota está deshabilitado/)).toBeVisible();
+
+    await control(page, 'registro?personal=true&intentos=0');
+    await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
+    await expect(page.getByText(/Espere unos minutos/)).toBeVisible();
+
+    await control(page, 'registro');
+    await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
+    await expect(page.getByRole('navigation', { name: 'Principal' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Cuenta de Olga Operaciones/ })).toBeVisible();
+    await expect(page.getByText(/Su código de cliente/)).toHaveCount(0);
+    expect(cuerpos.at(-1)).toEqual({
+      rol: 'operador',
+      nombre: 'Olga Operaciones',
+      email: 'olga@logitrack.test',
+      password: 'clave-olga-1',
+      codigo_acceso: 'LT-ACCESO-2026',
+    });
+
+    // Gestor de flota
+    await page.getByRole('button', { name: 'Cerrar sesión', exact: true }).click();
+    await page.goto('/registro');
+    await page.locator('#r-rol').selectOption('gestor_flota');
+    await page.locator('#r-nombre').fill('Germán Flota');
+    await page.locator('#r-email').fill('german@logitrack.test');
+    await page.locator('#r-password').fill('clave-german-1');
+    await page.locator('#r-confirmar').fill('clave-german-1');
+    await page.locator('#r-codigo_acceso').fill('LT-ACCESO-2026');
+    await page.getByRole('button', { name: 'Crear cuenta y entrar' }).click();
+    await expect(page.getByRole('navigation', { name: 'Principal' }).getByRole('link', { name: 'Dashboard de flota' })).toBeVisible();
+    expect(cuerpos.at(-1)?.rol).toBe('gestor_flota');
+  });
+
+  test('el menú lateral queda fijo al bajar con el scroll', async ({ page }) => {
+    await page.setViewportSize({ width: 1366, height: 600 });
+    await entrarComo(page, 'administrador');
+    await page.goto('/analitica');
+    const menu = page.getByRole('complementary', { name: 'Menú lateral' });
+    await expect(menu).toBeVisible();
+    const antes = await menu.boundingBox();
+    const alto = await page.evaluate(() => (globalThis as unknown as { document: { documentElement: { scrollHeight: number } } }).document.documentElement.scrollHeight);
+    expect(alto).toBeGreaterThan(900);
+    await page.mouse.wheel(0, 3000);
+    await expect.poll(() => page.evaluate(() => (globalThis as unknown as { scrollY: number }).scrollY)).toBeGreaterThan(200);
+    const despues = await menu.boundingBox();
+    expect(despues?.y).toBe(0);
+    expect(despues?.height).toBe(antes?.height);
+    await expect(page.getByRole('button', { name: 'Cerrar sesión', exact: true })).toBeInViewport();
   });
 
   test('cerrar sesión desde el menú lateral y entrar con otro rol', async ({ page }) => {
