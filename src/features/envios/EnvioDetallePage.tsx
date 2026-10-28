@@ -1,5 +1,5 @@
 import type { LatLngBoundsExpression } from 'leaflet';
-import { CalendarClock, CreditCard, ExternalLink, FileCheck2, Receipt, Route as RouteIcon, Split, Timer } from 'lucide-react';
+import { CalendarClock, CreditCard, ExternalLink, FileCheck2, Navigation, Receipt, Route as RouteIcon, Split, Timer } from 'lucide-react';
 import { Marker } from 'react-leaflet';
 import { Link, useParams } from 'react-router';
 import { AjustarVista, BaseMap } from '@/components/map/BaseMap';
@@ -8,6 +8,7 @@ import { iconoVehiculo } from '@/components/map/iconos';
 import { Badge, EstadoBadge } from '@/components/shared/Badge';
 import { Codigo, KeyValue, PageHeader, Panel } from '@/components/shared/Layout';
 import { Plate } from '@/components/shared/Plate';
+import { Button } from '@/components/ui/button';
 import { EmptyState, ErrorState, Limitacion, LoadingState } from '@/components/shared/States';
 import { Timeline } from '@/components/shared/Timeline';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/misc';
@@ -77,6 +78,7 @@ function intervalo(estado?: string) {
 
 /** Partes de un pedido dividido: cada una viaja en su propio vehículo. */
 function Partes({ pedido }: { pedido: Envio }) {
+  const verVehiculo = !usePuede('seguimientoCliente');
   const p = usePartes(pedido.id, { refetchInterval: ESTADOS_FINALES_ENVIO.includes(pedido.estado) ? false : 5000 });
   return (
     <Panel
@@ -104,7 +106,8 @@ function Partes({ pedido }: { pedido: Envio }) {
                 <EstadoBadge def={estadoEnvio(x.estado)} />
                 <span className="tabular text-text-2">{numero(x.peso_kg, 2)} kg</span>
                 <span className="ml-auto flex items-center gap-2">
-                  {x.placa_vehiculo ? <Plate placa={x.placa_vehiculo} tamano="sm" /> : <span className="text-xs text-text-3">Sin vehículo</span>}
+                  {verVehiculo &&
+                    (x.placa_vehiculo ? <Plate placa={x.placa_vehiculo} tamano="sm" /> : <span className="text-xs text-text-3">Sin vehículo</span>)}
                   {x.hora_estimada_llegada && <span className="text-xs text-text-2">llega {hora(x.hora_estimada_llegada)}</span>}
                 </span>
               </Link>
@@ -171,11 +174,23 @@ function Cobro({ envio }: { envio: Envio }) {
   );
 }
 
-/** Para quien no ve el mapa (cliente): en qué va el envío, con los datos del propio envío. */
+/** Para el cliente: en qué va el envío (sin placa ni conductor) y acceso a su mapa de seguimiento. */
 function EstadoSinMapa({ envio }: { envio: Envio }) {
   const def = estadoEnvio(envio.estado);
+  const sigue = usePuede('seguimientoCliente');
   return (
-    <Panel titulo="En qué va">
+    <Panel
+      titulo="En qué va"
+      acciones={
+        sigue && (
+          <Button size="sm" variant="primary" asChild>
+            <Link to={`/seguimiento/${envio.id}`}>
+              <Navigation /> Ver seguimiento
+            </Link>
+          </Button>
+        )
+      }
+    >
       <div className="space-y-3 text-[13px]">
         <p className="flex items-center gap-2">
           <EstadoBadge def={def} />
@@ -183,8 +198,7 @@ function EstadoSinMapa({ envio }: { envio: Envio }) {
         </p>
         <KeyValue
           items={[
-            { k: 'Vehículo', v: envio.placa_vehiculo ? <Plate placa={envio.placa_vehiculo} /> : 'Aún sin vehículo' },
-            { k: 'Conductor', v: envio.conductor_nombre ?? '—' },
+            { k: 'Vehículo', v: envio.vehiculo_id ? 'Asignado' : 'Aún sin vehículo' },
             { k: 'Llegada estimada', v: fechaHora(envio.hora_estimada_llegada) },
             { k: 'Se actualiza', v: ESTADOS_FINALES_ENVIO.includes(envio.estado) ? 'Terminado' : 'Automáticamente' },
           ]}
@@ -466,6 +480,8 @@ export default function EnvioDetallePage() {
   const verCostos = usePuede('administrar');
   const verPagos = usePuede('verPagos');
   const verClientes = usePuede('elegirCliente');
+  // El cliente nunca ve placa, conductor ni combustible (decisión de producto y de la API del cliente)
+  const verVehiculo = !usePuede('seguimientoCliente');
   const q = useEnvio(id, { refetchInterval: (qq) => intervalo(qq.state.data?.estado) });
   const cliente = useCliente(verClientes ? q.data?.cliente_id : undefined);
   const padre = useEnvio(q.data?.envio_padre_id ?? undefined);
@@ -623,7 +639,7 @@ export default function EnvioDetallePage() {
               ]}
             />
           </Panel>
-          {!dividido && <Panel titulo="Vehículo y conductor">
+          {!dividido && verVehiculo && <Panel titulo="Vehículo y conductor">
             {e.vehiculo_id ? (
               <KeyValue
                 items={[

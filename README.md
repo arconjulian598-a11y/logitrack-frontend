@@ -173,11 +173,13 @@ React 19 · TypeScript 6 (estricto) · Vite 8 · Tailwind CSS 4 · componentes a
 ## Fase 2: inicio de sesión, roles y cobro
 
 - La aplicación exige iniciar sesión (`POST /auth/login`). «Cerrar sesión» está en el menú lateral y en el menú de la cuenta, para entrar con otra cuenta u otro rol.
-- «Registrarse» (`/registro`): el backend no tiene registro público, así que un administrador autoriza el alta escribiendo su correo y contraseña en el mismo formulario; su sesión se usa solo para `POST /usuarios` y no se guarda.
+- «Registrarse» (`/registro`): registro público (`POST /auth/registro`). Cliente con su documento; operador y gestor de flota con el código de acceso que entrega el administrador. No se piden credenciales de nadie más.
 - El token vive en `sessionStorage` (nunca en `localStorage` ni en la URL); un 401 vuelve al inicio de sesión y un 403 muestra «sin permiso» sin cerrar la sesión.
 - Menús y pantallas por rol (`cliente`, `operador`, `gestor_flota`, `administrador`) según la matriz de `src/lib/auth/permisos.ts` (copia de la sección 9.2 del contrato; el gateway es quien decide).
 - Crear un envío es en dos pasos: cotizar (`POST /envios/cotizar`) y aceptar el precio (`POST /envios` con `monto_aceptado_cop`). Incluye carga divisible (pedidos con partes) y fecha programada.
 - Pantallas nuevas: Calendario (programados), Cobros y reembolsos, Usuarios, Mi cuenta, e Ingresos en el dashboard.
+- **Seguimiento del cliente** (`/seguimiento` y `/seguimiento/{id}`): el cliente sigue sus envíos en un mapa (ruta, estela, posición, progreso, hora estimada) con `GET /seguimiento/cliente/envio/{id}` (+ `/trazado` y `/recorrido`). Sin placa, conductor ni combustible. Polling de 5 s en curso y 10 s en espera, pausa con la pestaña oculta, sin peticiones solapadas y espera creciente (5–60 s) ante errores. Ver `docs/TEXTO_FRONTEND_LOGITRACK.md`, sección 5.1.
+- **Ubicación base de los vehículos**: «Registrar vehículo» exige elegir la ubicación de la lista (`GET /ubicaciones`); los vehículos sin ubicación se marcan «Sin ubicación» con «Establecer ubicación» (`PUT /vehiculos/{id}/ubicacion`, gestor y administrador), y el mapa de la flota avisa cuántos hay.
 - En producción el gateway es `https://logitrack-gateway.onrender.com` (`.env.production`). Si Render está dormido, las lecturas se reintentan a los 3, 6 y 12 s mostrando «el sistema se está iniciando».
 
 Pruebas de la fase 2 contra un gateway simulado (no necesitan el backend):

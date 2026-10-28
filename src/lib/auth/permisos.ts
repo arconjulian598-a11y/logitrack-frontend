@@ -59,6 +59,8 @@ const REGLAS: Regla[] = [
   r('GET', 'rutas(/.*)?', [O, G, A]),
   r('PATCH', `rutas/${ID}/recalcular`, [O, G, A]),
   r('POST', 'asignaciones(/.*)?', [O, G, A]),
+  // El cliente sigue SUS envíos solo por esta ruta (va antes de la del personal)
+  r('GET', `seguimiento/cliente/envio/${ID}(/trazado|/recorrido)?`, [C]),
   r('GET', '(seguimiento|simulaciones|telemetria)(/.*)?', [O, G, A]),
   r('GET', '(programas|intervenciones)(/.*)?', [O, G, A]),
   r('POST', '(programas|intervenciones)(/.*)?', [G, A]),
@@ -108,7 +110,8 @@ export const ACCIONES = {
   editarFlota: [G, A],
   verMantenimiento: [O, G, A],
   registrarMantenimiento: [G, A],
-  seguimiento: [O, G, A],
+  seguimiento: [O, G, A], // mapa del personal: flota, vehículos, telemetría, simulaciones
+  seguimientoCliente: [C], // mapa de sus propios envíos (respuesta reducida)
   aduanas: [O, A],
   notificaciones: [O, A],
   preferencias: [C, A],

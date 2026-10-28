@@ -15,6 +15,8 @@ function EtiquetaFuente({ v }: { v: VehiculoMapa }) {
     return <span className="text-xs font-semibold text-primary">En vivo</span>;
   if (v.fuente === 'historica')
     return <span className="text-xs text-text-2">Última posición {relativo(v.posicionEn)}</span>;
+  if (v.fuente === 'registrada')
+    return <span className="text-xs text-text-2">En {v.vehiculo.ubicacion_nombre ?? 'su ubicación registrada'}</span>;
   if (v.fuente === 'cargando') return <Skeleton className="h-3 w-20" />;
   return <span className="text-xs text-text-3">Sin coordenadas</span>;
 }
@@ -46,7 +48,7 @@ export function PanelVehiculos({
   const ordenados = useMemo(
     () =>
       [...visibles].sort((a, b) => {
-        const peso = (x: VehiculoMapa) => (x.fuente === 'en_vivo' ? 0 : x.fuente === 'historica' ? 1 : 2);
+        const peso = (x: VehiculoMapa) => (x.fuente === 'en_vivo' ? 0 : x.fuente === 'historica' || x.fuente === 'registrada' ? 1 : 2);
         return peso(a) - peso(b) || a.vehiculo.placa.localeCompare(b.vehiculo.placa);
       }),
     [visibles],
@@ -78,6 +80,7 @@ export function PanelVehiculos({
           <NativeSelect value={valores.fuente} onChange={(e) => set('fuente', e.target.value)} aria-label="Filtrar por posición">
             <option value="">Toda posición</option>
             <option value="en_vivo">En vivo</option>
+            <option value="registrada">Ubicación registrada</option>
             <option value="historica">Última conocida</option>
             <option value="con_posicion">Con coordenadas</option>
             <option value="sin_datos">Sin coordenadas</option>
@@ -148,7 +151,7 @@ export function PanelVehiculos({
                 )}
               >
                 <span
-                  className={cn('mt-1.5 size-2.5 shrink-0 rounded-full', v.fuente === 'historica' && 'ring-2 ring-offset-1 ring-offset-surface')}
+                  className={cn('mt-1.5 size-2.5 shrink-0 rounded-full', (v.fuente === 'historica' || v.fuente === 'registrada') && 'ring-2 ring-offset-1 ring-offset-surface')}
                   style={{ background: ESTADOS_MAPA[v.estadoMapa].color, ['--tw-ring-color' as string]: ESTADOS_MAPA[v.estadoMapa].color }}
                   aria-hidden
                 />

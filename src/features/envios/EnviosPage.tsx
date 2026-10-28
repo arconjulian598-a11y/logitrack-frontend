@@ -1,4 +1,4 @@
-import { CalendarClock, Globe2, PackagePlus, RefreshCw, Search, Skull, Snowflake, Split } from 'lucide-react';
+import { CalendarClock, Globe2, Navigation, PackagePlus, RefreshCw, Search, Skull, Snowflake, Split } from 'lucide-react';
 import { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { EstadoBadge, Tag } from '@/components/shared/Badge';
@@ -61,6 +61,7 @@ export default function EnviosPage() {
   const eligeCliente = usePuede('elegirCliente');
   const puedeCrear = usePuede('crearEnvio');
   const esCliente = !usePuede('operarEnvio') && !eligeCliente;
+  const sigueSusEnvios = usePuede('seguimientoCliente');
   // solo_pedidos: un pedido dividido aparece una vez (sus partes se ven en el detalle)
   const envios = useEnvios({
     estado: valores.estado || undefined,
@@ -74,9 +75,11 @@ export default function EnviosPage() {
   const filas = useMemo(
     () =>
       (envios.data ?? []).filter((e) =>
-        coincide(valores.q, e.codigo_envio, e.origen, e.destino, e.placa_vehiculo, e.conductor_nombre, e.codigo_ruta, nombreCliente.get(e.cliente_id)),
+        sigueSusEnvios
+          ? coincide(valores.q, e.codigo_envio, e.origen, e.destino)
+          : coincide(valores.q, e.codigo_envio, e.origen, e.destino, e.placa_vehiculo, e.conductor_nombre, e.codigo_ruta, nombreCliente.get(e.cliente_id)),
       ),
-    [envios.data, valores.q, nombreCliente],
+    [envios.data, valores.q, nombreCliente, sigueSusEnvios],
   );
 
   const columnas: Columna<Envio>[] = [
@@ -146,6 +149,17 @@ export default function EnviosPage() {
       ocultarBajo: 'sm',
     },
     {
+      id: 'seguimiento',
+      titulo: 'Seguimiento',
+      celda: (e) => (
+        <Button size="sm" asChild>
+          <Link to={`/seguimiento/${e.id}`} onClick={(ev) => ev.stopPropagation()} aria-label={`Ver seguimiento de ${e.codigo_envio}`}>
+            <Navigation /> Ver seguimiento
+          </Link>
+        </Button>
+      ),
+    },
+    {
       id: 'monto',
       titulo: 'Precio',
       celda: (e) => <span className="tabular">{e.monto_cop != null ? pesos(e.monto_cop) : '—'}</span>,
@@ -174,7 +188,7 @@ export default function EnviosPage() {
         titulo={esCliente ? 'Mis envíos' : 'Envíos'}
         descripcion={
           esCliente
-            ? 'Sus pedidos y en qué van. El sistema asigna vehículo y conductor solo. La lista se actualiza cada 10 segundos.'
+            ? 'Sus pedidos y en qué van. Con «Ver seguimiento» los sigue en el mapa. La lista se actualiza cada 10 segundos.'
             : 'Al crear un envío el sistema reserva vehículo y conductor, arranca el viaje y lo entrega solo. La lista se actualiza cada 10 segundos.'
         }
         acciones={
@@ -199,7 +213,7 @@ export default function EnviosPage() {
             <Input
               value={valores.q}
               onChange={(e) => set('q', e.target.value)}
-              placeholder={eligeCliente ? 'Código, ciudad, placa, conductor o cliente' : 'Código, ciudad, placa o conductor'}
+              placeholder={eligeCliente ? 'Código, ciudad, placa, conductor o cliente' : sigueSusEnvios ? 'Código o ciudad' : 'Código, ciudad, placa o conductor'}
               aria-label="Buscar en los envíos"
               className="pl-8"
             />
@@ -231,7 +245,12 @@ export default function EnviosPage() {
         <DataTable
           etiqueta="Envíos"
           filas={envios.data ? filas : undefined}
-          columnas={eligeCliente ? columnas : columnas.filter((c) => c.id !== 'cliente')}
+          columnas={columnas.filter(
+            (c) =>
+              (eligeCliente || c.id !== 'cliente') &&
+              // El cliente no ve placa ni conductor; en su lugar tiene «Ver seguimiento»
+              (sigueSusEnvios ? c.id !== 'vehiculo' : c.id !== 'seguimiento'),
+          )}
           clave={(e) => e.id}
           cargando={envios.isLoading}
           error={envios.error}

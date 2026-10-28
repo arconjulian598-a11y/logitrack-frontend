@@ -124,6 +124,15 @@ export interface Vehiculo {
   capacidad_tanque_l: Decimal | null;
   consumo_km_por_litro: Decimal | null;
   tipo_combustible: string | null;
+  /** Ubicación real conocida en reposo (la mantiene Fleet). Sin ella el vehículo no sale en el mapa. */
+  latitud?: number | null;
+  longitud?: number | null;
+  codigo_pais?: string | null;
+  ubicacion_id?: UUID | null;
+  ubicacion_nombre?: string | null;
+  ubicacion_actualizada_en?: ISODateTime | null;
+  ubicacion_fuente?: string | null;
+  ubicacion_confiable?: boolean;
 }
 
 export interface VehiculoCrear {
@@ -139,9 +148,33 @@ export interface VehiculoCrear {
   capacidad_tanque_l?: number | null;
   consumo_km_por_litro?: number | null;
   tipo_combustible?: TipoCombustible | null;
+  /** Ubicación base obligatoria: se copia de la ubicación guardada que elige el gestor (nunca a mano). */
+  ubicacion_id: UUID;
+  ubicacion_nombre: string;
+  latitud: number;
+  longitud: number;
+  codigo_pais: string;
 }
 
-export type VehiculoActualizar = Partial<Omit<VehiculoCrear, 'placa' | 'estado'>>;
+/** PUT /vehiculos/{id}/ubicacion (gestor_flota y administrador). */
+export interface UbicacionVehiculoFijar {
+  ubicacion_id: UUID;
+  nombre: string;
+  latitud: number;
+  longitud: number;
+  codigo_pais: string;
+  fuente: 'registro_gestor';
+}
+
+export interface RespuestaUbicacionVehiculo {
+  aplicada: boolean;
+  motivo?: string | null;
+  vehiculo: Vehiculo;
+}
+
+export type VehiculoActualizar = Partial<
+  Omit<VehiculoCrear, 'placa' | 'estado' | 'ubicacion_id' | 'ubicacion_nombre' | 'latitud' | 'longitud' | 'codigo_pais'>
+>;
 
 export interface Conductor {
   id: UUID;
@@ -553,6 +586,74 @@ export interface Seguimiento {
   parada_actual: { en_parada: boolean; motivo: string | null; hasta: ISODateTime | null };
   siguiente_parada: { nombre?: string | null; km_desde_origen?: number | null } | null;
   paradas: ParadaSeguimiento[];
+}
+
+// ---------- Seguimiento para la cuenta de cliente (Tracking, GET /seguimiento/cliente/envio/{id}) ----------
+// Mismos nombres que el del personal, pero SIN vehículo (placa, conductor), combustible ni datos de otros envíos.
+
+export type EstadoViajeCliente = 'sin_viaje' | 'preparando' | 'en_curso' | 'pausada' | 'finalizada' | 'cancelada';
+
+export interface PuntoCliente {
+  nombre: string | null;
+  latitud: number | null;
+  longitud: number | null;
+}
+
+export interface ParadaCliente {
+  nombre: string | null;
+  km_desde_origen: number;
+  latitud: number | null;
+  longitud: number | null;
+  estado: string;
+}
+
+export interface SeguimientoCliente {
+  envio_id: UUID;
+  codigo_envio: string | null;
+  estado_envio: string;
+  estado_viaje: EstadoViajeCliente | string;
+  mensaje: string;
+  es_pedido_dividido: boolean;
+  viaja_compartido: boolean;
+  trazado_disponible: boolean;
+  origen: PuntoCliente | null;
+  destino: PuntoCliente | null;
+  posicion: {
+    disponible: boolean;
+    latitud: number | null;
+    longitud: number | null;
+    velocidad_kmh: number | null;
+    actualizada_en: ISODateTime | null;
+    desactualizada: boolean;
+    segundos_desde_actualizacion: number | null;
+    umbral_segundos: number;
+  };
+  progreso: { porcentaje: number; km_recorridos: number; km_totales: number | null; km_restantes: number | null } | null;
+  tiempos: {
+    iniciado_en: ISODateTime | null;
+    hora_estimada_llegada: ISODateTime | null;
+    llegada_en: ISODateTime | null;
+    segundos_restantes: number | null;
+  } | null;
+  parada_actual: { en_parada: boolean; motivo: string | null } | null;
+  paradas: ParadaCliente[];
+  fase: 'reposicion' | 'viaje' | string | null;
+}
+
+export interface TrazadoCliente {
+  envio_id: UUID;
+  codigo_envio: string | null;
+  distancia_km: number | null;
+  origen: PuntoCliente;
+  destino: PuntoCliente;
+  puntos: number[][];
+  paradas: ParadaCliente[];
+}
+
+export interface RecorridoClientePunto {
+  tiempo: ISODateTime;
+  latitud: number;
+  longitud: number;
 }
 
 export interface Trazado {

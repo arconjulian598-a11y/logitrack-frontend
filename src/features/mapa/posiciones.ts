@@ -2,16 +2,18 @@
  * Une las tres fuentes reales de posición del backend en una sola vista por vehículo.
  *
  * 1. `GET /seguimiento/flota`: posición en vivo de los vehículos con viaje `en_curso` o `pausada`.
- * 2. `GET /telemetria/{vehiculo_id}?limite=1`: última lectura registrada (histórica) de los demás.
- * 3. Sin ninguna de las dos: el vehículo se lista «sin coordenadas» y no se dibuja.
+ * 2. `GET /vehiculos`: ubicación base registrada en Fleet (si es confiable) o, si es más reciente,
+ *    `GET /telemetria/{vehiculo_id}?limite=1`: última lectura registrada (histórica).
+ * 3. Sin ninguna: el vehículo se lista «sin coordenadas» y no se dibuja.
  *
  * Nunca se inventan posiciones. Estado operativo (color) y procedencia de la posición
  * (relleno sólido = en vivo, borde punteado = última conocida) son ejes independientes.
  */
+import { sinUbicacion } from '@/lib/dominio';
 import { num } from '@/lib/format';
 import type { Conductor, LecturaTelemetria, SeguimientoResumen, Vehiculo } from '@/lib/types/api';
 
-export type FuentePosicion = 'en_vivo' | 'historica' | 'sin_datos' | 'cargando';
+export type FuentePosicion = 'en_vivo' | 'registrada' | 'historica' | 'sin_datos' | 'cargando';
 
 export type EstadoMapa =
   | 'en_ruta'
@@ -81,6 +83,27 @@ export function construirVista(
     const u = ultimas.get(v.id);
     const lat = num(u?.lectura?.latitud);
     const lng = num(u?.lectura?.longitud);
+    const conLectura = !!u?.lectura && lat !== null && lng !== null;
+
+    // Ubicación base de Fleet (fijada por el gestor o al entregar): se usa salvo que la lectura sea más reciente
+    const baseLat = num(v.latitud);
+    const baseLng = num(v.longitud);
+    if (!sinUbicacion(v) && baseLat !== null && baseLng !== null) {
+      const tBase = v.ubicacion_actualizada_en ? Date.parse(v.ubicacion_actualizada_en) : 0;
+      const tLectura = conLectura ? Date.parse(u!.lectura!.tiempo) : -Infinity;
+      if (!(tLectura > tBase)) {
+        return {
+          ...base,
+          fuente: 'registrada' as const,
+          latitud: baseLat,
+          longitud: baseLng,
+          posicionEn: v.ubicacion_actualizada_en ?? null,
+          velocidadKmh: null,
+          combustiblePct: null,
+        };
+      }
+    }
+
     if (u?.lectura && lat !== null && lng !== null) {
       return {
         ...base,

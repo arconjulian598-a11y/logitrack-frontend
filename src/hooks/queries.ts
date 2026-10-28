@@ -41,6 +41,7 @@ const RUTA_POR_FAMILIA: Record<string, (k: readonly unknown[]) => [string, strin
   rutasMaestras: () => ['GET', '/rutas-maestras'],
   rutas: () => ['GET', '/rutas'],
   seguimiento: () => ['GET', '/seguimiento/flota'],
+  seguimientoCliente: () => ['GET', '/seguimiento/cliente/envio/x'],
   simulaciones: () => ['GET', '/simulaciones'],
   telemetria: () => ['GET', '/telemetria/x'],
   mantenimiento: () => ['GET', '/programas/x'],
@@ -346,6 +347,31 @@ export const useRecorrido = (envioId?: string | null, activo = true) =>
     enabled: !!envioId,
     retry: (n, e) => !es404(e) && n < 2,
     refetchInterval: activo ? config.poll.seguimientoMs * 3 : false,
+  });
+
+// ---------- Seguimiento del cliente (solo rol cliente; nunca se envía cliente_id) ----------
+/** Ruta planificada de SU envío: se pide una vez cuando `trazado_disponible`; 409 = aún se prepara (reintenta). */
+export const useTrazadoCliente = (envioId: string | null | undefined, habilitado: boolean) =>
+  useQuery({
+    queryKey: ['seguimientoCliente', 'trazado', envioId ?? ''],
+    queryFn: ({ signal }) => api.seguimientoCliente.trazado(envioId!, { signal }),
+    enabled: !!envioId && habilitado,
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    retry: (n, e) => e instanceof ApiError && e.status === 409 && n < 10,
+    retryDelay: 3000,
+  });
+/** Estela ya recorrida con la carga: una vez al abrir; luego la pantalla agrega las posiciones nuevas. */
+export const useRecorridoCliente = (envioId: string | null | undefined, habilitado: boolean) =>
+  useQuery({
+    queryKey: ['seguimientoCliente', 'recorrido', envioId ?? ''],
+    queryFn: ({ signal }) => api.seguimientoCliente.recorrido(envioId!, 500, { signal }),
+    enabled: !!envioId && habilitado,
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    retry: false,
   });
 
 // ---------- Simulaciones ----------

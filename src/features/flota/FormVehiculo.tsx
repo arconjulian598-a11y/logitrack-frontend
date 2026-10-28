@@ -1,7 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { ErrorFormulario, Field, FormActions } from '@/components/shared/Form';
+import { UbicacionPicker } from '@/components/shared/Pickers';
 import { aNumero } from '@/lib/formularios';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -9,9 +11,25 @@ import { Input, NativeSelect } from '@/components/ui/input';
 import { Checkbox, Label } from '@/components/ui/misc';
 import { useAccion } from '@/hooks/useAccion';
 import * as api from '@/lib/api/endpoints';
+import { ApiError } from '@/lib/api/errors';
 import { COMBUSTIBLES, ESTADOS_VEHICULO, TIPOS_VEHICULO } from '@/lib/dominio';
 import { num } from '@/lib/format';
-import type { EstadoVehiculo, TipoCombustible, TipoVehiculo, Vehiculo } from '@/lib/types/api';
+import type { EstadoVehiculo, TipoCombustible, TipoVehiculo, Ubicacion, Vehiculo } from '@/lib/types/api';
+import { EtiquetaUbicacion } from './UbicacionVehiculo';
+
+/** Campos de la ubicación base en el cuerpo de POST /vehiculos (un 422 sobre ellos va junto al selector). */
+const CAMPOS_UBICACION = new Set(['ubicacion_id', 'ubicacion_nombre', 'latitud', 'longitud', 'codigo_pais']);
+
+/** Errores del alta que se muestran junto a su campo en vez de arriba del formulario. */
+function erroresDeCampo(error: unknown): { placa?: string; ubicacion?: string } {
+  if (!(error instanceof ApiError)) return {};
+  if (error.status === 409) return { placa: 'Ya existe un vehículo con esa placa' };
+  if (error.status === 422 && error.validacion.length) {
+    const deUbicacion = error.validacion.filter((v) => (v.loc ?? []).some((p) => CAMPOS_UBICACION.has(String(p))));
+    if (deUbicacion.length) return { ubicacion: deUbicacion.map((v) => v.msg.replace(/^Value error,\s*/i, '')).join(' ') };
+  }
+  return {};
+}
 
 const decimalOpcional = (min = 0, estricto = true) =>
   z
@@ -57,6 +75,7 @@ export function DialogoVehiculo({
   vehiculo?: Vehiculo;
 }) {
   const edicion = !!vehiculo;
+  const [ubicacion, setUbicacion] = useState<Ubicacion | null>(null);
   const form = useForm<Valores>({
     resolver: zodResolver(esquema),
     values: {
@@ -91,27 +110,65 @@ export function DialogoVehiculo({
       };
       return edicion
         ? api.vehiculos.actualizar(vehiculo!.id, comunes)
-        : api.vehiculos.crear({ ...comunes, placa: v.placa.toUpperCase(), estado: v.estado });
+        : api.vehiculos.crear({
+            ...comunes,
+            placa: v.placa.toUpperCase(),
+            estado: v.estado,
+            // Se copian tal cual de la ubicación elegida en la lista (nadie escribe coordenadas)
+            ubicacion_id: ubicacion!.id,
+            ubicacion_nombre: ubicacion!.nombre,
+            latitud: ubicacion!.latitud,
+            longitud: ubicacion!.longitud,
+            codigo_pais: ubicacion!.codigo_pais,
+          });
     },
     exito: (r) => (edicion ? `Vehículo ${r.placa} actualizado.` : `Vehículo ${r.placa} registrado.`),
     invalida: [['vehiculos'], ['analitica']],
     toastError: false,
-    onSuccess: () => onAbierto(false),
+    onSuccess: () => {
+      setUbicacion(null);
+      onAbierto(false);
+    },
   });
   const e = form.formState.errors;
+  const enCampo = erroresDeCampo(a.error);
+  const errorGeneral = enCampo.placa || enCampo.ubicacion ? null : a.error;
   const { register, control } = form;
 
   return (
-    <Dialog open={abierto} onOpenChange={onAbierto}>
+    <Dialog
+      open={abierto}
+      onOpenChange={(o) => {
+        if (!o) {
+          setUbicacion(null);
+          a.reset();
+        }
+        onAbierto(o);
+      }}
+    >
       <DialogContent
         titulo={edicion ? `Editar vehículo ${vehiculo!.placa}` : 'Registrar vehículo'}
         descripcion={edicion ? 'Solo se envían los campos del formulario. La placa no se puede cambiar.' : 'La placa debe ser única en la flota.'}
         ancho="max-w-2xl"
       >
-        <form onSubmit={form.handleSubmit((v) => a.mutate(v))} className="space-y-4" noValidate>
+        <form
+          onSubmit={form.handleSubmit((v) => {
+            if (!edicion && !ubicacion) return;
+            a.mutate(v);
+          })}
+          className="space-y-4"
+          noValidate
+        >
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Placa" htmlFor="placa" requerido error={e.placa?.message}>
-              <Input id="placa" {...register('placa')} disabled={edicion} className="font-cond uppercase tracking-wide" aria-invalid={!!e.placa} placeholder="ABC123" />
+            <Field label="Placa" htmlFor="placa" requerido error={e.placa?.message ?? enCampo.placa}>
+              <Input
+                id="placa"
+                {...register('placa', { onChange: () => enCampo.placa && a.reset() })}
+                disabled={edicion}
+                className="font-cond uppercase tracking-wide"
+                aria-invalid={!!e.placa || !!enCampo.placa}
+                placeholder="ABC123"
+              />
             </Field>
             <Field label="Tipo" htmlFor="tipo" requerido>
               <NativeSelect id="tipo" {...register('tipo')}>
@@ -168,6 +225,32 @@ export function DialogoVehiculo({
               <Input id="rend" inputMode="decimal" {...register('consumo_km_por_litro')} />
             </Field>
           </div>
+          {edicion ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-md bg-surface-2 px-3 py-2 text-[13px]">
+              <span className="text-text-2">Ubicación base:</span>
+              <EtiquetaUbicacion v={vehiculo!} />
+              <span className="text-xs text-text-3">Se cambia con «Establecer ubicación» en la ficha del vehículo.</span>
+            </div>
+          ) : (
+            <Field
+              label="Ubicación base"
+              htmlFor="ubicacion-base"
+              requerido
+              error={enCampo.ubicacion}
+              ayuda="Dónde está el vehículo hoy. Con ella aparece en el mapa y se asigna por cercanía."
+            >
+              <UbicacionPicker
+                id="ubicacion-base"
+                valor={ubicacion}
+                limite={20}
+                invalido={!!enCampo.ubicacion}
+                onCambio={(u) => {
+                  setUbicacion(u);
+                  if (enCampo.ubicacion) a.reset();
+                }}
+              />
+            </Field>
+          )}
           <div className="flex flex-wrap gap-6">
             {(
               [
@@ -185,12 +268,22 @@ export function DialogoVehiculo({
               </div>
             ))}
           </div>
-          <ErrorFormulario error={a.error} />
+          <div aria-live="polite">
+            <ErrorFormulario error={errorGeneral} />
+          </div>
           <FormActions>
-            <Button type="button" variant="ghost" onClick={() => onAbierto(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setUbicacion(null);
+                a.reset();
+                onAbierto(false);
+              }}
+            >
               Cancelar
             </Button>
-            <Button type="submit" variant="primary" cargando={a.isPending}>
+            <Button type="submit" variant="primary" cargando={a.isPending} disabled={!edicion && !ubicacion}>
               {edicion ? 'Guardar cambios' : 'Registrar vehículo'}
             </Button>
           </FormActions>

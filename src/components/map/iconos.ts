@@ -27,7 +27,7 @@ export function iconoVehiculo(opts: {
   const clases = ['lt-pin', opts.historica ? 'is-historica' : '', opts.seleccionado ? 'is-selected' : ''].join(' ');
   return L.divIcon({
     className: 'lt-marker',
-    html: `<div style="position:relative"><div class="${clases}" style="background:${fondo};${opts.historica ? `border-color:${opts.color}` : ''}">${glifo}</div><span class="lt-pin-label">${escapar(opts.placa)}</span></div>`,
+    html: `<div style="position:relative"><div class="${clases}" style="background:${fondo};${opts.historica ? `border-color:${opts.color}` : ''}">${glifo}</div>${opts.placa ? `<span class="lt-pin-label">${escapar(opts.placa)}</span>` : ''}</div>`,
     iconSize: [26, 26],
     iconAnchor: [13, 13],
     popupAnchor: [0, -14],

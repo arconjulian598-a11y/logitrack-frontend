@@ -77,6 +77,21 @@ export const ESTADOS_VEHICULO: Record<string, Def> = {
   fuera_de_servicio: { etiqueta: 'Fuera de servicio', tono: 'muted' },
 };
 export const estadoVehiculo = (v?: string | null) => buscar(ESTADOS_VEHICULO, v);
+/**
+ * Un vehículo sin ubicación base (o con una que Fleet ya no considera confiable) no sale en el mapa
+ * y solo se asigna como último recurso: hay que fijarle una desde la lista de ubicaciones.
+ */
+export function sinUbicacion(v: { latitud?: number | string | null; ubicacion_confiable?: boolean | null }): boolean {
+  return v.latitud == null || v.ubicacion_confiable === false;
+}
+
+export const FUENTES_UBICACION: Record<string, string> = {
+  registro_gestor: 'Fijada por el gestor',
+  entrega: 'Al entregar un envío',
+  interrupcion: 'Al interrumpirse un viaje',
+  telemetria: 'Telemetría',
+};
+
 export const ESTADOS_VEHICULO_LISTA = ['active', 'en_transito', 'en_mantenimiento', 'fuera_de_servicio'] as const;
 
 export const ESTADOS_CONDUCTOR: Record<string, Def> = {
@@ -143,6 +158,7 @@ export const ESTADOS_RUTA: Record<string, Def> = {
 export const estadoRuta = (v?: string | null) => buscar(ESTADOS_RUTA, v);
 
 export const ESTADOS_VIAJE: Record<string, Def> = {
+  sin_viaje: { etiqueta: 'Sin viaje todavía', tono: 'neutral' },
   preparando: { etiqueta: 'Preparando', tono: 'neutral' },
   en_curso: { etiqueta: 'En curso', tono: 'primary' },
   pausada: { etiqueta: 'Pausado por aduana', tono: 'danger' },

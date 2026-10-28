@@ -10,11 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Input, NativeSelect } from '@/components/ui/input';
 import { useConductores, useVehiculos } from '@/hooks/queries';
 import { useFiltrosUrl } from '@/hooks/useFiltrosUrl';
-import { COMBUSTIBLES, ESTADOS_VEHICULO, estadoVehiculo, TIPOS_VEHICULO, tipoVehiculo } from '@/lib/dominio';
+import { COMBUSTIBLES, ESTADOS_VEHICULO, estadoVehiculo, sinUbicacion, TIPOS_VEHICULO, tipoVehiculo } from '@/lib/dominio';
 import { fecha, num, numero } from '@/lib/format';
 import type { Vehiculo } from '@/lib/types/api';
 import { coincide } from '@/lib/utils';
 import { DialogoVehiculo } from './FormVehiculo';
+import { BotonEstablecerUbicacion, DialogoUbicacionVehiculo, EtiquetaUbicacion } from './UbicacionVehiculo';
 import { DialogoViabilidad } from './Viabilidad';
 
 const CLAVES = ['q', 'estado', 'tipo', 'capacidad'] as const;
@@ -27,6 +28,7 @@ export default function VehiculosPage() {
   const navigate = useNavigate();
   const [nuevo, setNuevo] = useState(false);
   const [viab, setViab] = useState(false);
+  const [fijar, setFijar] = useState<Vehiculo | null>(null);
   const conductorDe = useMemo(() => new Map((conductores.data ?? []).filter((c) => c.vehiculo_id).map((c) => [c.vehiculo_id!, c])), [conductores.data]);
 
   const lista = vehiculos.data ?? [];
@@ -38,7 +40,8 @@ export default function VehiculosPage() {
       (!valores.capacidad ||
         (valores.capacidad === 'refrigeracion' && v.capacidad_refrigeracion) ||
         (valores.capacidad === 'hazmat' && v.certificado_hazmat) ||
-        (valores.capacidad === 'sin_conductor' && !conductorDe.has(v.id))),
+        (valores.capacidad === 'sin_conductor' && !conductorDe.has(v.id)) ||
+        (valores.capacidad === 'sin_ubicacion' && sinUbicacion(v))),
   );
   const n = (e: string) => lista.filter((v) => v.estado === e).length;
   const hoy = new Date().toISOString().slice(0, 10);
@@ -69,6 +72,17 @@ export default function VehiculosPage() {
     },
     { id: 'estado', titulo: 'Estado', celda: (v) => <EstadoBadge def={estadoVehiculo(v.estado)} />, orden: (v) => v.estado },
     {
+      id: 'ubicacion',
+      titulo: 'Ubicación',
+      celda: (v) => (
+        <div className="flex flex-wrap items-center gap-2">
+          <EtiquetaUbicacion v={v} />
+          <BotonEstablecerUbicacion vehiculo={v} onAbrir={setFijar} />
+        </div>
+      ),
+      orden: (v) => (sinUbicacion(v) ? '' : (v.ubicacion_nombre ?? '~')),
+    },
+    {
       id: 'conductor',
       titulo: 'Conductor',
       celda: (v) => conductorDe.get(v.id)?.nombre ?? <span className="text-xs text-warn">Sin conductor: no recibe envíos</span>,
@@ -91,7 +105,7 @@ export default function VehiculosPage() {
     <>
       <PageHeader
         titulo="Vehículos"
-        descripcion="Flota registrada. Un vehículo sin conductor nunca se asigna a envíos; el estado «en tránsito» lo pone y lo quita el sistema."
+        descripcion="Flota registrada. Un vehículo sin conductor nunca se asigna a envíos y uno sin ubicación no sale en el mapa; el estado «en tránsito» lo pone y lo quita el sistema."
         acciones={
           <>
             <Button onClick={() => setViab(true)}>
@@ -111,12 +125,13 @@ export default function VehiculosPage() {
         }
       />
       <Panel cuerpo="px-3 py-3" className="mb-5">
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
           <Cifra valor={lista.length} etiqueta="Vehículos" />
           <Cifra valor={n('active')} etiqueta="Disponibles" tono="ok" />
           <Cifra valor={n('en_transito')} etiqueta="En tránsito" tono="primary" />
           <Cifra valor={n('en_mantenimiento')} etiqueta="En mantenimiento" tono={n('en_mantenimiento') ? 'warn' : undefined} />
           <Cifra valor={lista.filter((v) => !conductorDe.has(v.id)).length} etiqueta="Sin conductor" />
+          <Cifra valor={lista.filter(sinUbicacion).length} etiqueta="Sin ubicación" tono={lista.some(sinUbicacion) ? 'warn' : undefined} />
         </div>
       </Panel>
       <Panel cuerpo="p-0">
@@ -146,6 +161,7 @@ export default function VehiculosPage() {
             <option value="refrigeracion">Con refrigeración</option>
             <option value="hazmat">Certificado HAZMAT</option>
             <option value="sin_conductor">Sin conductor</option>
+            <option value="sin_ubicacion">Sin ubicación</option>
           </NativeSelect>
           {CLAVES.some((k) => valores[k]) && (
             <Button size="sm" variant="ghost" onClick={limpiar}>
@@ -168,6 +184,7 @@ export default function VehiculosPage() {
       </Panel>
       <DialogoVehiculo abierto={nuevo} onAbierto={setNuevo} />
       <DialogoViabilidad abierto={viab} onAbierto={setViab} />
+      <DialogoUbicacionVehiculo vehiculo={fijar} onCerrar={() => setFijar(null)} />
     </>
   );
 }

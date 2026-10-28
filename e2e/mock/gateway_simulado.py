@@ -54,7 +54,9 @@ PERMISOS = [
     _p("POST", rf"envios/{ID}/cancelar", G, A),
     _p("PATCH", rf"envios/{ID}/reprogramar", G, A),
     _p("POST", r"viabilidad", C, O, A),
+    _p("GET", rf"seguimiento/cliente/envio/{ID}(/trazado|/recorrido)?", C),
     _p("GET", r"(vehiculos|conductores|reservas|rutas|rutas-maestras|seguimiento|simulaciones|telemetria|programas|intervenciones)(/.*)?", O, G, A),
+    _p("POST,PATCH,PUT", r"(vehiculos|conductores)(/.*)?", G, A),
     _p("GET", r"(declaraciones|notificaciones)(/.*)?", O, A),
     _p("GET,POST", rf"preferencias/{ID}", C, A),
     _p("GET", r"pagos/por-reembolsar", A),
@@ -96,6 +98,10 @@ def reiniciar():
     E["registro_intentos"] = 0
     E["registro_intentos_max"] = 20
     E["registro_con_authorization"] = False
+    E["vehiculos"] = {}
+    E["seg"] = {}            # envio_id -> {"escenario": str, "paso": int}
+    E["seg_fallos"] = 0      # próximas N consultas del seguimiento del cliente responden 503
+    E["seg_consultas"] = []  # (momento, envio_id) de cada GET /seguimiento/cliente/envio/{id}
     E["dormir"] = 0
     E["tarifa"] = {"base": 20000, "minimo": 50000, "ton_km": 280}
     E["seq_envio"] = 40
@@ -132,6 +138,8 @@ def reiniciar():
     E["pagos"] = {}
     E["facturas"] = {}
     E["cotizaciones"] = []
+    for placa, ciudad, extra in (("GOQ998", "CO-MTR", {"_en_viaje": True}), ("KQA794", None, {}), ("TRK100", "CO-BOG", {})):
+        _crear_vehiculo(placa, ciudad, extra)
 
 
 def _publico(d):
@@ -378,7 +386,7 @@ def cliente(cid: str, request: Request):
 
 @app.get("/api/v1/ubicaciones")
 @app.get("/api/v1/ubicaciones/")
-def ubicaciones(q: str | None = None, pais: str | None = None):
+def ubicaciones(q: str | None = None, pais: str | None = None, limite: int = 25):
     lista = list(E["ubicaciones"].values())
     if q:
         lista = [u for u in lista if q.lower()[:4] in u["nombre"].lower() or q.upper() == u["codigo"]]
@@ -835,6 +843,255 @@ def etl():
 def estado():
     return {"estado_general": "ok", "servicios": {s: {"estado": "ok", "ms": 3} for s in
             ["fleet", "shipment", "routing", "tracking", "maintenance", "customs", "notification", "billing", "analytics"]}}
+
+
+# ---------- Flota: ubicación base de los vehículos ----------
+def _crear_vehiculo(placa, ciudad, extra=None, tipo="camion", capacidad=5000.0):
+    u = next((x for x in E["ubicaciones"].values() if x["codigo"] == ciudad), None) if ciudad else None
+    vid = str(uuid.uuid4())
+    E["vehiculos"][vid] = {
+        "id": vid, "placa": placa, "tipo": tipo, "capacidad_kg": _dec(capacidad), "capacidad_m3": None, "anio": None,
+        "vencimiento_seguro": None, "estado": "active", "capacidad_refrigeracion": False, "certificado_hazmat": False,
+        "capacidad_tanque_l": None, "consumo_km_por_litro": None, "tipo_combustible": None,
+        "latitud": u["latitud"] if u else None, "longitud": u["longitud"] if u else None, "codigo_pais": "CO" if u else None,
+        "ubicacion_id": u["id"] if u else None, "ubicacion_nombre": u["nombre"] if u else None,
+        "ubicacion_actualizada_en": _iso(_ahora()) if u else None, "ubicacion_fuente": "registro_gestor" if u else None,
+        "ubicacion_confiable": bool(u), "peso_reservado_kg": "0", "volumen_reservado_m3": "0", **(extra or {}),
+    }
+    return E["vehiculos"][vid]
+
+
+@app.get("/api/v1/vehiculos")
+@app.get("/api/v1/vehiculos/")
+def vehiculos():
+    return [_publico(v) for v in E["vehiculos"].values()]
+
+
+@app.get("/api/v1/vehiculos/{vid}")
+def vehiculo(vid: str):
+    v = E["vehiculos"].get(vid)
+    return _publico(v) if v else JSONResponse(status_code=404, content={"detail": "Vehículo no encontrado"})
+
+
+@app.post("/api/v1/vehiculos")
+@app.post("/api/v1/vehiculos/")
+async def crear_vehiculo(request: Request):
+    b = await request.json()
+    faltan = [c for c in ("ubicacion_id", "ubicacion_nombre", "latitud", "longitud", "codigo_pais") if b.get(c) in (None, "")]
+    if faltan:
+        return JSONResponse(status_code=422, content={"detail": [{"loc": ["body", c], "msg": "Field required", "type": "missing"} for c in faltan]})
+    u = E["ubicaciones"].get(b["ubicacion_id"])
+    if not u or abs(u["latitud"] - float(b["latitud"])) > 1e-9 or abs(u["longitud"] - float(b["longitud"])) > 1e-9:
+        return JSONResponse(status_code=422, content={"detail": [{"loc": ["body", "ubicacion_id"], "msg": "Value error, La ubicación no coincide con la lista de ubicaciones guardadas"}]})
+    placa = str(b.get("placa", "")).strip().upper()
+    if any(v["placa"] == placa for v in E["vehiculos"].values()):
+        return JSONResponse(status_code=409, content={"detail": "Ya existe un vehículo con esa placa"})
+    v = _crear_vehiculo(placa, u["codigo"], tipo=b.get("tipo") or "camion", capacidad=float(b.get("capacidad_kg") or 1))
+    E["ultimo_alta_vehiculo"] = b
+    return JSONResponse(status_code=201, content=_publico(v))
+
+
+@app.put("/api/v1/vehiculos/{vid}/ubicacion")
+async def fijar_ubicacion(vid: str, request: Request):
+    v = E["vehiculos"].get(vid)
+    if not v:
+        return JSONResponse(status_code=404, content={"detail": "Vehículo no encontrado"})
+    b = await request.json()
+    if b.get("fuente", "registro_gestor") == "registro_gestor" and v.get("_en_viaje"):
+        return _error(409, "VEHICULO_EN_VIAJE", "El vehículo está en un viaje: su posición la informa el seguimiento, no se puede fijar a mano")
+    v.update({"latitud": float(b["latitud"]), "longitud": float(b["longitud"]), "codigo_pais": b.get("codigo_pais"),
+              "ubicacion_id": b.get("ubicacion_id"), "ubicacion_nombre": b.get("nombre"), "ubicacion_actualizada_en": _iso(_ahora()),
+              "ubicacion_fuente": b.get("fuente", "registro_gestor"), "ubicacion_confiable": True})
+    E["ultima_ubicacion_fijada"] = b
+    return {"aplicada": True, "motivo": None, "vehiculo": _publico(v)}
+
+
+@app.get("/api/v1/conductores")
+@app.get("/api/v1/conductores/")
+def conductores():
+    return []
+
+
+# ---------- Seguimiento del cliente (escenarios controlados por /__mock/seguimiento) ----------
+def _ub(codigo):
+    return next(x for x in E["ubicaciones"].values() if x["codigo"] == codigo)
+
+
+def _linea(o, d, n=21):
+    return [[o["latitud"] + (d["latitud"] - o["latitud"]) * i / (n - 1), o["longitud"] + (d["longitud"] - o["longitud"]) * i / (n - 1)] for i in range(n)]
+
+
+@app.post("/__mock/envio_cliente")
+def _envio_cliente(estado: str = "en_transito", escenario: str = "en_curso", ajeno: bool = False, dividido: bool = False):
+    """Crea un envío ya asignado (Montería -> Cartagena) del cliente de prueba (o de otro cliente si ajeno)."""
+    clientes = list(E["clientes"].values())
+    cliente = clientes[1] if ajeno else clientes[0]
+    E["seq_envio"] += 1
+    o, d = _ub("CO-MTR"), _ub("CO-CTG")
+    x = {"cliente": cliente, "o": o, "d": d, "fp": None, "km": 297.0}
+    e = _nuevo_envio(x, {}, 1200, f"ENV-{E['seq_envio']:08d}")
+    e.update({"estado": estado, "vehiculo_id": "veh-goq", "placa_vehiculo": "GOQ998", "tipo_vehiculo": "camion",
+              "conductor_nombre": "Andrés Pérez", "monto_cop": "850000.00", "hora_estimada_llegada": _iso(_ahora() + timedelta(hours=3))})
+    if dividido:
+        e["partes_total"], e["partes_entregadas"] = 2, 0
+        for n in (1, 2):
+            pte = _nuevo_envio(x, {}, 600, f"{e['codigo_envio']}-P{n}", e["id"], n)
+            pte.update({"estado": estado, "placa_vehiculo": f"PRT00{n}", "conductor_nombre": "Otro Conductor"})
+            E["seg"][pte["id"]] = {"escenario": escenario, "paso": 0}
+    E["seg"][e["id"]] = {"escenario": "dividido" if dividido else escenario, "paso": 0}
+    return {"id": e["id"], "codigo_envio": e["codigo_envio"]}
+
+
+@app.post("/__mock/seguimiento")
+def _seguimiento_ctl(envio: str | None = None, escenario: str | None = None, fallos: int | None = None):
+    if envio and escenario:
+        E["seg"].setdefault(envio, {"paso": 0})["escenario"] = escenario
+        if escenario in ("finalizada",):
+            E["envios"][envio]["estado"] = "entregado"
+        if escenario in ("cancelada",):
+            E["envios"][envio]["estado"] = "cancelado"
+    if fallos is not None:
+        E["seg_fallos"] = fallos
+    return {"ok": True}
+
+
+@app.get("/__mock/seguimiento/consultas")
+def _seguimiento_consultas(envio: str | None = None):
+    return [{"t": t, "envio": eid} for t, eid in E["seg_consultas"] if not envio or eid == envio]
+
+
+def _envio_del_cliente(eid, u):
+    e = E["envios"].get(eid)
+    if not e or e["cliente_id"] != u.get("cliente_id"):
+        return None
+    return e
+
+
+def _vista(e, sc, avanzar):
+    o, d = _ub("CO-MTR"), _ub("CO-CTG")
+    linea = _linea(o, d)
+    esc = sc["escenario"]
+    if avanzar and esc == "en_curso":
+        sc["paso"] = min(sc["paso"] + 1, len(linea) - 2)
+    paso = sc["paso"]
+    ahora = _ahora()
+    base = {"envio_id": e["id"], "codigo_envio": e["codigo_envio"], "estado_envio": e["estado"], "es_pedido_dividido": False,
+            "viaja_compartido": esc == "compartido", "trazado_disponible": False, "origen": {"nombre": o["nombre"], "latitud": None, "longitud": None},
+            "destino": {"nombre": d["nombre"], "latitud": None, "longitud": None}, "paradas": [], "parada_actual": None, "fase": None,
+            "progreso": None, "tiempos": None,
+            "posicion": {"disponible": False, "latitud": None, "longitud": None, "velocidad_kmh": None, "actualizada_en": None,
+                         "desactualizada": False, "segundos_desde_actualizacion": None, "umbral_segundos": 60}}
+    if esc == "dividido":
+        return {**base, "estado_viaje": "sin_viaje", "es_pedido_dividido": True, "mensaje": "Su pedido se dividió en partes: siga cada parte por separado."}
+    if esc == "sin_viaje":
+        return {**base, "estado_viaje": "sin_viaje", "mensaje": "Estamos asignando un vehículo a su envío."}
+    if esc == "preparando":
+        return {**base, "estado_viaje": "preparando", "mensaje": "Preparando el viaje."}
+    con_viaje = {**base, "trazado_disponible": True,
+                 "origen": {"nombre": o["nombre"], "latitud": o["latitud"], "longitud": o["longitud"]},
+                 "destino": {"nombre": d["nombre"], "latitud": d["latitud"], "longitud": d["longitud"]},
+                 "tiempos": {"iniciado_en": _iso(ahora - timedelta(minutes=10)), "hora_estimada_llegada": _iso(ahora + timedelta(minutes=40)),
+                             "llegada_en": None, "segundos_restantes": 2400}, "parada_actual": {"en_parada": False, "motivo": None}, "fase": "viaje"}
+    total = 297.0
+    if esc == "finalizada":
+        lat, lon = linea[-1]
+        return {**con_viaje, "estado_viaje": "finalizada", "mensaje": "Llegó a su destino.", "fase": None,
+                "tiempos": {**con_viaje["tiempos"], "llegada_en": _iso(ahora), "segundos_restantes": None},
+                "progreso": {"porcentaje": 100.0, "km_recorridos": total, "km_totales": total, "km_restantes": 0.0},
+                "posicion": {**base["posicion"], "disponible": True, "latitud": lat, "longitud": lon, "velocidad_kmh": 0.0,
+                             "actualizada_en": _iso(ahora - timedelta(seconds=5)), "segundos_desde_actualizacion": 5}}
+    if esc == "cancelada":
+        return {**con_viaje, "estado_viaje": "cancelada", "estado_envio": "cancelado", "mensaje": "Envío cancelado.", "fase": None,
+                "progreso": {"porcentaje": 10.0, "km_recorridos": 29.7, "km_totales": total, "km_restantes": 267.3}}
+    if esc == "reposicion":
+        return {**con_viaje, "estado_viaje": "en_curso", "fase": "reposicion", "mensaje": "El vehículo se dirige al punto de recogida.",
+                "tiempos": {**con_viaje["tiempos"], "iniciado_en": None},
+                "progreso": {"porcentaje": 0.0, "km_recorridos": 0.0, "km_totales": total, "km_restantes": total},
+                "posicion": {**base["posicion"], "disponible": True, "latitud": o["latitud"] - 0.2, "longitud": o["longitud"] - 0.1,
+                             "velocidad_kmh": 55.0, "actualizada_en": _iso(ahora), "segundos_desde_actualizacion": 0}}
+    lat, lon = linea[paso]
+    pct = round(paso / (len(linea) - 1) * 100, 1)
+    vista = {**con_viaje, "estado_viaje": "pausada" if esc == "pausada" else "en_curso",
+             "mensaje": "Detenido por retención en aduana." if esc == "pausada" else "En camino.",
+             "progreso": {"porcentaje": pct, "km_recorridos": round(total * pct / 100, 2), "km_totales": total, "km_restantes": round(total * (1 - pct / 100), 2)},
+             "posicion": {**base["posicion"], "disponible": True, "latitud": lat, "longitud": lon, "velocidad_kmh": 60.0,
+                          "actualizada_en": _iso(ahora), "segundos_desde_actualizacion": 0}}
+    if esc == "desactualizada":
+        vista["posicion"].update({"desactualizada": True, "segundos_desde_actualizacion": 420, "actualizada_en": _iso(ahora - timedelta(seconds=420))})
+    if e["estado"] == "con_incidencia":
+        vista["mensaje"] = "Hay una incidencia con su envío; un operador la está atendiendo."
+    return vista
+
+
+@app.get("/api/v1/seguimiento/cliente/envio/{eid}")
+def seguimiento_cliente(eid: str, request: Request):
+    E["seg_consultas"].append((_iso(_ahora()), eid))
+    if E["seg_fallos"] > 0:
+        E["seg_fallos"] -= 1
+        return _error(503, "SEGUIMIENTO_NO_DISPONIBLE", "No se pudo verificar el envío en este momento; intente de nuevo.")
+    e = _envio_del_cliente(eid, request.state.u)
+    if not e:
+        return _error(404, "ENVIO_NO_ENCONTRADO", "Envío no encontrado")
+    sc = E["seg"].setdefault(eid, {"escenario": "sin_viaje", "paso": 0})
+    return _vista(e, sc, True)
+
+
+@app.get("/api/v1/seguimiento/cliente/envio/{eid}/trazado")
+def trazado_cliente(eid: str, request: Request):
+    e = _envio_del_cliente(eid, request.state.u)
+    if not e:
+        return _error(404, "ENVIO_NO_ENCONTRADO", "Envío no encontrado")
+    esc = E["seg"].get(eid, {}).get("escenario", "sin_viaje")
+    if esc in ("sin_viaje", "dividido"):
+        return _error(404, "SIN_VIAJE", "El envío aún no tiene un viaje.")
+    if esc == "preparando":
+        return _error(409, "VIAJE_EN_PREPARACION", "El viaje todavía se está preparando; intente en unos segundos.")
+    o, d = _ub("CO-MTR"), _ub("CO-CTG")
+    return {"envio_id": eid, "codigo_envio": e["codigo_envio"], "distancia_km": 297.0,
+            "origen": {"nombre": o["nombre"], "latitud": o["latitud"], "longitud": o["longitud"]},
+            "destino": {"nombre": d["nombre"], "latitud": d["latitud"], "longitud": d["longitud"]},
+            "puntos": _linea(o, d), "paradas": []}
+
+
+@app.get("/api/v1/seguimiento/cliente/envio/{eid}/recorrido")
+def recorrido_cliente(eid: str, request: Request, limite: int = 500):
+    e = _envio_del_cliente(eid, request.state.u)
+    if not e:
+        return _error(404, "ENVIO_NO_ENCONTRADO", "Envío no encontrado")
+    sc = E["seg"].get(eid, {"escenario": "sin_viaje", "paso": 0})
+    if sc["escenario"] in ("sin_viaje", "preparando", "reposicion", "dividido"):
+        return []
+    linea = _linea(_ub("CO-MTR"), _ub("CO-CTG"))
+    hasta = len(linea) if sc["escenario"] == "finalizada" else sc["paso"] + 1
+    t0 = _ahora() - timedelta(minutes=10)
+    return [{"tiempo": _iso(t0 + timedelta(seconds=10 * i)), "latitud": p[0], "longitud": p[1]} for i, p in enumerate(linea[:hasta])][-limite:]
+
+
+# Mapa del PERSONAL para el mismo viaje (para comprobar que no cambió): trae placa, conductor y combustible
+@app.get("/api/v1/seguimiento/envio/{eid}")
+def seguimiento_personal(eid: str):
+    e = E["envios"].get(eid)
+    sc = E["seg"].get(eid)
+    if not e or not sc or sc["escenario"] not in ("en_curso", "desactualizada", "pausada"):
+        return _error(404, "SIN_VIAJE", "El envío aún no tiene viaje")
+    v = _vista(e, sc, False)
+    return {"envio_id": eid, "codigo_envio": e["codigo_envio"], "codigo_ruta": "RUT-00000007", "estado_viaje": v["estado_viaje"],
+            "mensaje": v["mensaje"], "factor_tiempo": 10, "vehiculo": {"id": "veh-goq", "placa": "GOQ998", "conductor_id": None, "conductor_nombre": "Andrés Pérez"},
+            "origen": v["origen"], "destino": v["destino"],
+            "posicion": {k: v["posicion"][k] for k in ("latitud", "longitud", "velocidad_kmh", "actualizada_en")},
+            "progreso": v["progreso"], "tiempos": v["tiempos"],
+            "combustible": {"nivel_pct": 72.0, "litros": 216.0, "capacidad_l": 300.0, "autonomia_km": 640.0, "recargas": 0, "litros_recargados": 0, "estimado": False},
+            "parada_actual": {"en_parada": False, "motivo": None, "hasta": None}, "siguiente_parada": None, "paradas": []}
+
+
+@app.get("/api/v1/seguimiento/envio/{eid}/trazado")
+def trazado_personal(eid: str):
+    if eid not in E["seg"]:
+        return _error(404, "SIN_VIAJE", "El envío aún no tiene viaje")
+    o, d = _ub("CO-MTR"), _ub("CO-CTG")
+    return {"envio_id": eid, "codigo_envio": E["envios"][eid]["codigo_envio"], "codigo_ruta": "RUT-00000007", "distancia_km": 297.0,
+            "origen": {"nombre": o["nombre"], "latitud": o["latitud"], "longitud": o["longitud"]},
+            "destino": {"nombre": d["nombre"], "latitud": d["latitud"], "longitud": d["longitud"]}, "puntos": _linea(o, d), "paradas": []}
 
 
 # Lo demás que la interfaz pide de pasada (flota, mapa, aduanas…): listas vacías o "sin viaje"

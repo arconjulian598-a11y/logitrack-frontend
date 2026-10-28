@@ -67,6 +67,9 @@ export const vehiculos = {
   porPlaca: (placa: string, o?: S) => http.get<T.Vehiculo>(`/vehiculos/placa/${seg(placa)}`, o),
   obtener: (id: string, o?: S) => http.get<T.Vehiculo>(`/vehiculos/${seg(id)}`, o),
   actualizar: (id: string, body: T.VehiculoActualizar) => http.patch<T.Vehiculo>(`/vehiculos/${seg(id)}`, body),
+  /** PUT /vehiculos/{id}/ubicacion: fija la ubicación base elegida de la lista (409 VEHICULO_EN_VIAJE si está en viaje). */
+  fijarUbicacion: (id: string, body: T.UbicacionVehiculoFijar) =>
+    http.put<T.RespuestaUbicacionVehiculo>(`/vehiculos/${seg(id)}/ubicacion`, body),
   cambiarEstado: (id: string, estado: T.EstadoVehiculo) =>
     http.patch<T.Vehiculo>(`/vehiculos/${seg(id)}/estado`, { estado }),
 };
@@ -144,6 +147,23 @@ export const asignaciones = {
 };
 
 // ---------- Tracking · Seguimiento ----------
+/**
+ * Seguimiento para la cuenta de CLIENTE: solo por el UUID del envío. Nunca se envía cliente_id: la
+ * identidad la pone el gateway con el token. Sin reintentos automáticos: la pantalla maneja su propia espera.
+ */
+export const seguimientoCliente = {
+  estado: (envioId: string, o?: S) =>
+    http.get<T.SeguimientoCliente>(`/seguimiento/cliente/envio/${seg(envioId)}`, { ...o, reintentarArranque: false }),
+  trazado: (envioId: string, o?: S) =>
+    http.get<T.TrazadoCliente>(`/seguimiento/cliente/envio/${seg(envioId)}/trazado`, { ...o, reintentarArranque: false }),
+  recorrido: (envioId: string, limite = 500, o?: S) =>
+    http.get<T.RecorridoClientePunto[]>(`/seguimiento/cliente/envio/${seg(envioId)}/recorrido`, {
+      ...o,
+      query: { limite },
+      reintentarArranque: false,
+    }),
+};
+
 export const seguimiento = {
   flota: (o?: S) => http.get<T.SeguimientoResumen[]>('/seguimiento/flota', o),
   porCodigo: (codigo: string, o?: S) => http.get<T.Seguimiento>(`/seguimiento/codigo/${seg(codigo)}`, o),

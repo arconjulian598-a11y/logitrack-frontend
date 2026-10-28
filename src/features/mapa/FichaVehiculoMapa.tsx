@@ -7,7 +7,7 @@ import { ErrorState, Limitacion, LoadingState } from '@/components/shared/States
 import { Button } from '@/components/ui/button';
 import { useEnvio, useRutaMaestra, useSeguimientoEnvio, useUltimasLecturas } from '@/hooks/queries';
 import { ApiError } from '@/lib/api/errors';
-import { estadoVehiculo, tipoVehiculo } from '@/lib/dominio';
+import { estadoVehiculo, FUENTES_UBICACION, tipoVehiculo } from '@/lib/dominio';
 import { conUnidad, fechaHora, numero, relativo } from '@/lib/format';
 import { FichaViaje } from '../seguimiento/FichaViaje';
 import type { VehiculoMapa } from './posiciones';
@@ -105,7 +105,25 @@ export function FichaVehiculoMapa({ v, onCentrar }: { v: VehiculoMapa; onCentrar
         )}
       </div>
 
-      {v.viaje ? <Viaje envioId={v.viaje.envio_id} /> : <UltimaLectura vehiculoId={v.vehiculo.id} />}
+      {v.viaje ? (
+        <Viaje envioId={v.viaje.envio_id} />
+      ) : v.fuente === 'registrada' ? (
+        <div className="space-y-2">
+          <p className="text-[13px] text-text-2">
+            Sin viaje activo. Se muestra su <strong className="text-text">ubicación registrada</strong> en Fleet.
+          </p>
+          <KeyValue
+            columnas={2}
+            items={[
+              { k: 'Lugar', v: v.vehiculo.ubicacion_nombre ?? '—', ancho: true },
+              { k: 'Registrada', v: fechaHora(v.vehiculo.ubicacion_actualizada_en), ancho: true },
+              { k: 'Origen del dato', v: v.vehiculo.ubicacion_fuente ? (FUENTES_UBICACION[v.vehiculo.ubicacion_fuente] ?? v.vehiculo.ubicacion_fuente) : '—', ancho: true },
+            ]}
+          />
+        </div>
+      ) : (
+        <UltimaLectura vehiculoId={v.vehiculo.id} />
+      )}
 
       <div className="flex flex-wrap gap-2 border-t border-rule pt-3">
         <Button size="sm" onClick={onCentrar} disabled={v.latitud === null}>

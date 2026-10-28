@@ -162,3 +162,20 @@ export function fechaCorta(v: string | null | undefined): string {
   const mes = new Intl.DateTimeFormat('es-CO', { month: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(+m[1]!, +m[2]! - 1, 1)));
   return `${Number(m[3])} ${mes.replace('.', '')}`;
 }
+
+/** hh:mm:ss en la zona horaria del navegador del usuario (para «Última actualización»). */
+export function horaLocalConSegundos(v: string | null | undefined, vacio = '—'): string {
+  const d = aFecha(v);
+  if (!d) return vacio;
+  return new Intl.DateTimeFormat('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d);
+}
+
+/** «hace N min» a partir de segundos (sin redondear hacia arriba a algo que no pasó). */
+export function haceSegundos(segundos: number | null | undefined): string {
+  if (segundos == null) return 'hace un tiempo';
+  if (segundos < 60) return `hace ${Math.max(0, Math.floor(segundos))} s`;
+  const min = Math.floor(segundos / 60);
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.floor(min / 60);
+  return `hace ${h} h ${min % 60} min`;
+}

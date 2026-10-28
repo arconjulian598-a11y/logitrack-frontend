@@ -198,16 +198,19 @@ export function UbicacionPicker({
   onCambio,
   pais,
   invalido,
+  limite = 25,
 }: {
   id?: string;
   valor: Ubicacion | null;
   onCambio: (u: Ubicacion | null) => void;
   pais?: string;
   invalido?: boolean;
+  /** Cuántas ubicaciones pedir a GET /ubicaciones por búsqueda. */
+  limite?: number;
 }) {
   const [q, setQ] = useState('');
   const dq = useDebounced(q, 250);
-  const r = useUbicaciones({ q: dq || undefined, pais: pais || undefined, limite: 25 });
+  const r = useUbicaciones({ q: dq || undefined, pais: pais || undefined, limite });
   return (
     <Combo
       id={id}

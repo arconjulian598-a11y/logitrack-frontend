@@ -1,8 +1,8 @@
 import type { LatLngBoundsExpression } from 'leaflet';
-import { Crosshair, List, Maximize2, RefreshCw, Route as RouteIcon, X } from 'lucide-react';
+import { Crosshair, List, MapPinOff, Maximize2, RefreshCw, Route as RouteIcon, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Marker, Popup, useMap } from 'react-leaflet';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { AjustarVista, BaseMap, InvalidarTamano } from '@/components/map/BaseMap';
 import { CapaRuta } from '@/components/map/CapaRuta';
 import { iconoVehiculo } from '@/components/map/iconos';
@@ -12,9 +12,11 @@ import { Button } from '@/components/ui/button';
 import { Switch, Tooltip } from '@/components/ui/misc';
 import { useEnvio, useRecorrido, useRutaMaestra, useTrazado } from '@/hooks/queries';
 import { config } from '@/lib/config';
-import { tipoVehiculo } from '@/lib/dominio';
+import { sinUbicacion, tipoVehiculo } from '@/lib/dominio';
+import type { Vehiculo } from '@/lib/types/api';
 import { numero, relativo } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { BotonEstablecerUbicacion, DialogoUbicacionVehiculo } from '../flota/UbicacionVehiculo';
 import { FichaVehiculoMapa } from './FichaVehiculoMapa';
 import { Leyenda } from './Leyenda';
 import { PanelVehiculos } from './PanelVehiculos';
@@ -72,6 +74,8 @@ export default function MapaPage() {
     : null;
 
   const sinPosicion = vista.filter((v) => v.fuente === 'sin_datos').length;
+  // Vehículos que Fleet tiene sin ubicación (o no confiable) y que no van en un viaje: se avisan, no se esconden
+  const sinUbicacionBase = vista.filter((v) => !v.viaje && sinUbicacion(v.vehiculo)).map((v) => v.vehiculo);
   const enVivo = vista.filter((v) => v.fuente === 'en_vivo').length;
 
   if (errorVehiculos && !vista.length) {
@@ -128,12 +132,12 @@ export default function MapaPage() {
                 icon={iconoVehiculo({
                   color: ESTADOS_MAPA[v.estadoMapa].color,
                   placa: v.vehiculo.placa,
-                  historica: v.fuente === 'historica',
+                  historica: v.fuente === 'historica' || v.fuente === 'registrada',
                   seleccionado: sel,
                   pausado: v.estadoMapa === 'detenido_aduana',
                   mantenimiento: v.estadoMapa === 'mantenimiento',
                 })}
-                title={`${v.vehiculo.placa}: ${ESTADOS_MAPA[v.estadoMapa].etiqueta}${v.fuente === 'historica' ? ', última posición conocida' : ', en vivo'}`}
+                title={`${v.vehiculo.placa}: ${ESTADOS_MAPA[v.estadoMapa].etiqueta}${v.fuente === 'historica' ? ', última posición conocida' : v.fuente === 'registrada' ? ', ubicación registrada' : ', en vivo'}`}
                 alt={v.vehiculo.placa}
                 zIndexOffset={sel ? 1000 : v.fuente === 'en_vivo' ? 500 : 0}
                 eventHandlers={{ click: () => seleccionar(v) }}
@@ -151,7 +155,11 @@ export default function MapaPage() {
                       {v.combustiblePct !== null && `, combustible ${numero(v.combustiblePct)} %`}
                     </div>
                     <div className="text-xs text-text-3">
-                      {v.fuente === 'en_vivo' ? 'Posición en vivo' : `Última posición conocida ${relativo(v.posicionEn)}`}
+                      {v.fuente === 'en_vivo'
+                        ? 'Posición en vivo'
+                        : v.fuente === 'registrada'
+                          ? `Ubicación registrada: ${v.vehiculo.ubicacion_nombre ?? '—'}`
+                          : `Última posición conocida ${relativo(v.posicionEn)}`}
                     </div>
                   </div>
                 </Popup>
@@ -163,6 +171,7 @@ export default function MapaPage() {
         {/* Controles superiores */}
         <div className="pointer-events-none absolute inset-x-3 top-3 z-[700] flex flex-wrap items-start justify-between gap-2">
           <div className="pointer-events-auto flex flex-wrap gap-2">
+            {sinUbicacionBase.length > 0 && <AvisoSinUbicacion vehiculos={sinUbicacionBase} />}
             {!panelAbierto && (
               <Button size="sm" onClick={() => setPanelAbierto(true)} className="shadow-sm">
                 <List /> Vehículos ({visibles.length})
@@ -251,5 +260,39 @@ function RutaSeleccionada({ envioId }: { envioId: string }) {
       estimada={rm.data?.estimada}
       recorrido={(r.data ?? []).map((p) => [p.latitud, p.longitud] as [number, number])}
     />
+  );
+}
+
+/** «N vehículos sin ubicación»: no se dibujan, pero tampoco se esconden; acceso directo a fijarles una. */
+function AvisoSinUbicacion({ vehiculos }: { vehiculos: Vehiculo[] }) {
+  const [abierto, setAbierto] = useState(false);
+  const [fijar, setFijar] = useState<Vehiculo | null>(null);
+  const n = vehiculos.length;
+  return (
+    <div className="relative">
+      <Button size="sm" onClick={() => setAbierto((a) => !a)} aria-expanded={abierto} className="border-warn/40 bg-warn-soft shadow-sm">
+        <MapPinOff className="text-warn" /> {n} {n === 1 ? 'vehículo sin ubicación' : 'vehículos sin ubicación'}
+      </Button>
+      {abierto && (
+        <div
+          role="region"
+          aria-label="Vehículos sin ubicación"
+          className="absolute left-0 top-10 w-[min(340px,calc(100vw-1.5rem))] rounded-lg border border-rule bg-surface p-3 shadow-lg"
+        >
+          <p className="mb-2 text-xs text-text-2">No aparecen en el mapa y solo se asignan como último recurso.</p>
+          <ul className="max-h-64 space-y-1.5 overflow-y-auto">
+            {vehiculos.map((v) => (
+              <li key={v.id} className="flex items-center justify-between gap-2">
+                <Link to={`/flota/vehiculos/${v.id}`} className="hover:opacity-80">
+                  <Plate placa={v.placa} tamano="sm" />
+                </Link>
+                <BotonEstablecerUbicacion vehiculo={v} onAbrir={setFijar} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <DialogoUbicacionVehiculo vehiculo={fijar} onCerrar={() => setFijar(null)} />
+    </div>
   );
 }

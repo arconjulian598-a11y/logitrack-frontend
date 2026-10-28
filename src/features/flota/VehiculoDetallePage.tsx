@@ -21,11 +21,12 @@ import {
 } from '@/hooks/queries';
 import { useAccion } from '@/hooks/useAccion';
 import * as api from '@/lib/api/endpoints';
-import { COMBUSTIBLES, estadoEnvio, estadoVehiculo, humanizar, prioridad, tipoVehiculo } from '@/lib/dominio';
+import { COMBUSTIBLES, estadoEnvio, estadoVehiculo, FUENTES_UBICACION, humanizar, prioridad, sinUbicacion, tipoVehiculo } from '@/lib/dominio';
 import { conUnidad, fecha, fechaHora, numero, pesos, relativo } from '@/lib/format';
-import type { EstadoVehiculo } from '@/lib/types/api';
+import type { EstadoVehiculo, Vehiculo } from '@/lib/types/api';
 import { FichaViaje } from '../seguimiento/FichaViaje';
 import { DialogoVehiculo } from './FormVehiculo';
+import { BotonEstablecerUbicacion, DialogoUbicacionVehiculo, EtiquetaUbicacion } from './UbicacionVehiculo';
 
 const OPCIONES_ESTADO: { e: EstadoVehiculo; ayuda: string }[] = [
   { e: 'active', ayuda: 'Vuelve a estar disponible para envíos.' },
@@ -127,6 +128,7 @@ export default function VehiculoDetallePage() {
   const conductores = useConductores();
   const envios = useEnvios();
   const [editar, setEditar] = useState(false);
+  const [fijar, setFijar] = useState<Vehiculo | null>(null);
   const [destino, setDestino] = useState<EstadoVehiculo | null>(null);
   const cambiar = useAccion({
     fn: () => api.vehiculos.cambiarEstado(id, destino!),
@@ -226,6 +228,26 @@ export default function VehiculoDetallePage() {
           </Panel>
         </div>
         <div className="min-w-0 space-y-5">
+          <Panel titulo="Ubicación base" acciones={<BotonEstablecerUbicacion vehiculo={x} onAbrir={setFijar} siempre />}>
+            {sinUbicacion(x) ? (
+              <div className="space-y-2" aria-live="polite">
+                <EtiquetaUbicacion v={x} />
+                <p className="text-[13px] text-text-2">
+                  {x.latitud == null
+                    ? 'Este vehículo no tiene ubicación registrada: no aparece en el mapa y solo se asigna como último recurso.'
+                    : 'Su última ubicación ya no es confiable: no aparece en el mapa hasta fijar una nueva.'}
+                </p>
+              </div>
+            ) : (
+              <KeyValue
+                items={[
+                  { k: 'Lugar', v: <EtiquetaUbicacion v={x} />, ancho: true },
+                  { k: 'Registrada', v: fechaHora(x.ubicacion_actualizada_en) },
+                  { k: 'Origen del dato', v: x.ubicacion_fuente ? (FUENTES_UBICACION[x.ubicacion_fuente] ?? x.ubicacion_fuente) : '—' },
+                ]}
+              />
+            )}
+          </Panel>
           <Panel titulo="Ficha técnica">
             <KeyValue
               items={[
@@ -268,6 +290,7 @@ export default function VehiculoDetallePage() {
         </div>
       </div>
       <DialogoVehiculo abierto={editar} onAbierto={setEditar} vehiculo={x} />
+      <DialogoUbicacionVehiculo vehiculo={fijar} onCerrar={() => setFijar(null)} />
       <ConfirmDialog
         abierto={!!destino}
         onAbierto={(o) => !o && setDestino(null)}

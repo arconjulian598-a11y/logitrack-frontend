@@ -13,7 +13,7 @@ export function useFiltroMapa() {
       (!valores.estado || v.estadoMapa === valores.estado) &&
       (!valores.tipo || v.vehiculo.tipo === valores.tipo) &&
       (!valores.fuente ||
-        (valores.fuente === 'con_posicion' ? v.fuente === 'en_vivo' || v.fuente === 'historica' : v.fuente === valores.fuente)),
+        (valores.fuente === 'con_posicion' ? v.fuente === 'en_vivo' || v.fuente === 'historica' || v.fuente === 'registrada' : v.fuente === valores.fuente)),
     [valores.q, valores.estado, valores.tipo, valores.fuente],
   );
   return { valores, set, limpiar, aplica };
