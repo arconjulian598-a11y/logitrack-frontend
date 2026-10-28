@@ -88,4 +88,13 @@ describe('respuestas de error en HTML', () => {
     expect(e.message).toContain('shipment');
     expect(e.message).not.toContain('<');
   });
+  it('un 429 en texto plano (límite de tráfico de Render) explica que no es problema de la cuenta', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('Too Many Requests\n', { status: 429, headers: { 'X-Gateway-Servicio': 'shipment', 'Content-Type': 'text/plain' } }),
+    );
+    const e = (await solicitar('POST', '/auth/login', { body: {}, publica: true }).catch((x: unknown) => x)) as { codigo?: string; message: string };
+    expect(e.codigo).toBe('LIMITE_DE_PETICIONES');
+    expect(e.message).toContain('espere unos minutos');
+    expect(e.message).not.toContain('inesperado');
+  });
 });

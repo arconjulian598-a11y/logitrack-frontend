@@ -57,11 +57,13 @@ async function leerCuerpo(resp: Response): Promise<unknown> {
       const servicio = resp.headers.get('X-Gateway-Servicio') ?? undefined;
       return {
         detail: {
-          codigo: resp.status >= 500 ? 'SERVICIO_NO_DISPONIBLE' : 'RESPUESTA_INESPERADA',
+          codigo: resp.status >= 500 ? 'SERVICIO_NO_DISPONIBLE' : resp.status === 429 ? 'LIMITE_DE_PETICIONES' : 'RESPUESTA_INESPERADA',
           mensaje:
             resp.status >= 500
               ? `El servicio ${servicio ?? 'del backend'} no respondió (error ${resp.status}). Si el sistema estaba dormido, tarda cerca de un minuto en despertar: intente de nuevo.`
-              : `El servidor respondió un error ${resp.status} inesperado.`,
+              : resp.status === 429
+                ? `El servicio ${servicio ?? 'del backend'} está rechazando peticiones por exceso de tráfico (error 429). No es un problema de su cuenta: espere unos minutos e intente de nuevo.`
+                : `El servidor respondió un error ${resp.status} inesperado.`,
           ...(servicio ? { servicio } : {}),
         },
       };
