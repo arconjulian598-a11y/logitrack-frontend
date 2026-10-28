@@ -1,0 +1,168 @@
+# LogiTrack completo en un solo equipo: 10 microservicios + PostgreSQL + RabbitMQ.
+# Se arranca solo al encender la máquina (restart: unless-stopped + Docker habilitado al inicio).
+# Solo el gateway queda expuesto, y solo en esta máquina (127.0.0.1:8002): Tailscale Funnel lo publica.
+#
+#   docker compose up -d --build     # primera vez o tras actualizar
+#   docker compose ps                # estado
+#   docker compose logs -f gateway   # registros de un servicio
+#
+# Las claves salen de .env (lo crea instalar.sh; nunca se sube a GitHub).
+
+name: logitrack
+
+x-base: &base
+  restart: unless-stopped
+  networks: [interna]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+x-con-datos: &con-datos
+  <<: *base
+  depends_on:
+    postgres: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+
+x-entorno: &entorno
+  INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Falta INTERNAL_API_KEY en .env}
+  RABBITMQ_URL: amqp://logitrack:${RABBITMQ_PASSWORD:?Falta RABBITMQ_PASSWORD en .env}@rabbitmq:5672/
+  FLEET_SERVICE_URL: http://fleet:8000
+  SHIPMENT_SERVICE_URL: http://shipment:8001
+  ROUTING_SERVICE_URL: http://routing:8003
+  TRACKING_SERVICE_URL: http://tracking:8004
+  MAINTENANCE_SERVICE_URL: http://maintenance:8005
+  CUSTOMS_SERVICE_URL: http://customs:8006
+  NOTIFICATION_SERVICE_URL: http://notification:8007
+  BILLING_SERVICE_URL: http://billing:8008
+  ANALYTICS_SERVICE_URL: http://analytics:8009
+  TZ: America/Bogota
+
+services:
+  postgres:
+    <<: *base
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: logitrack
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: logitrack
+      TZ: America/Bogota
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/crear-bases.sql:/docker-entrypoint-initdb.d/01-crear-bases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logitrack -d logitrack"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  rabbitmq:
+    <<: *base
+    image: rabbitmq:3.13-management-alpine
+    hostname: rabbitmq # los datos de RabbitMQ dependen del nombre del equipo: fijo para que sobrevivan
+    environment:
+      RABBITMQ_DEFAULT_USER: logitrack
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+
+  fleet:
+    <<: *con-datos
+    build: { context: "https://github.com/LogiTrackSystem/fleet-service.git#${RAMA:-feature/automatizacion-envios}" }
+    environment:
+      <<: *entorno
+      PORT: "8000"
+      DATABASE_URL: postgresql://logitrack:${POSTGRES_PASSWORD}@postgres:5432/fleet_db
+
+  shipment:
+    <<: *con-datos
+    build: { context: "https://github.com/LogiTrackSystem/shipment-service.git#${RAMA:-feature/automatizacion-envios}" }
+    environment:
+      <<: *entorno
+      PORT: "8001"
+      DATABASE_URL: postgresql://logitrack:${POSTGRES_PASSWORD}@postgres:5432/shipment_db
+      JWT_SECRET: ${JWT_SECRET:?Falta JWT_SECRET en .env}
+      ENTREGA_AUTOMATICA: "true"
+      CODIGO_REGISTRO_PERSONAL: ${CODIGO_REGISTRO_PERSONAL:-}
+
+  routing:
+    <<: *con-datos
+    build: { context: "https://github.com/LogiTrackSystem/routing-service.git#${RAMA:-feature/automatizacion-envios}" }
+    environment:
+      <<: *entorno
+      PORT: "8003"
+      DATABASE_URL: postgresql://logitrack:${POSTGRES_PASSWORD}@postgres:5432/routing_db
+      OSRM_URL: ${OSRM_URL:-https://router.project-osrm.org}
+
+  tracking:
+    <<: *con-datos
+    build: { context: "https://github.com/LogiTrackSystem/tracking-ingestion-service.git#${RAMA:-feature/automatizacion-envios}" }
+    environment:
+      <<: *entorno
+      PORT: "8004"
+      DATABASE_URL: postgresql://logitrack:${POSTGRES_PASSWORD}@postgres:5432/tracking_db
+
+  maintenance:
+    <<: *con-datos
+    build: { context: "https://github.com/LogiTrackSystem/maintenance-service.git#${RAMA:-feature/automatizacion-envios}" }
+    environment:
+      <<: *entorno
+      PORT: "8005"
+      DATABASE_URL: postgresql://logitrack:${POSTGRES_PASSWORD}@postgres:5432/maintenance_db
+
+  customs:
+    <<: *con-datos
+    build: { context: "https://github.com/LogiTrackSystem/customs-service.git#${RAMA:-feature/automatizacion-envios}" }
+    environment:
+      <<: *entorno
+      PORT: "8006"
+      DATABASE_URL: postgresql://logitrack:${POSTGRES_PASSWORD}@postgres:5432/customs_db
+
+  notification:
+    <<: *con-datos
+    build: { context: "https://github.com/LogiTrackSystem/notification-service.git#${RAMA:-feature/automatizacion-envios}" }
+    environment:
+      <<: *entorno
+      PORT: "8007"
+
+  billing:
+    <<: *con-datos
+    build: { context: "https://github.com/LogiTrackSystem/billing-service.git#${RAMA:-feature/automatizacion-envios}" }
+    environment:
+      <<: *entorno
+      PORT: "8008"
+      DATABASE_URL: postgresql://logitrack:${POSTGRES_PASSWORD}@postgres:5432/billing_db
+
+  analytics:
+    <<: *con-datos
+    build: { context: "https://github.com/LogiTrackSystem/analytics-service.git#${RAMA:-feature/automatizacion-envios}" }
+    environment:
+      <<: *entorno
+      PORT: "8009"
+      DATABASE_URL: postgresql://logitrack:${POSTGRES_PASSWORD}@postgres:5432/analytics_db
+      ETL_INTERVALO_MINUTOS: "5"
+
+  gateway:
+    <<: *base
+    build: { context: "https://github.com/LogiTrackSystem/api-gateway.git#${RAMA:-feature/automatizacion-envios}" }
+    depends_on: [fleet, shipment, routing, tracking, maintenance, customs, notification, billing, analytics]
+    ports:
+      - "${GATEWAY_IP:-127.0.0.1}:8002:8002"
+    environment:
+      <<: *entorno
+      PORT: "8002"
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://logitrack-frontend-pi.vercel.app,http://localhost:5173}
+      GATEWAY_TIMEOUT_S: "65"
+      WARMUP_ACTIVO: "false" # aquí nada se duerme: no hace falta despertar a nadie
+
+networks:
+  interna: {}
+
+volumes:
+  pgdata: {}
+  rabbitdata: {}
