@@ -1,3 +1,4 @@
+import { limpioAlAbrir } from '@/lib/limpioAlAbrir';
 import { CheckCircle2, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { ErrorFormulario, Field, FormActions } from '@/components/shared/Form';
@@ -11,7 +12,7 @@ import * as api from '@/lib/api/endpoints';
 import { CAUSAS_VIABILIDAD } from '@/lib/dominio';
 
 /** POST /viabilidad: ¿alguna pareja vehículo+conductor podría llevar esta carga? No reserva nada. */
-export function DialogoViabilidad({ abierto, onAbierto }: { abierto: boolean; onAbierto: (v: boolean) => void }) {
+function DialogoViabilidadFormulario({ abierto, onAbierto }: { abierto: boolean; onAbierto: (v: boolean) => void }) {
   const [peso, setPeso] = useState('');
   const [volumen, setVolumen] = useState('');
   const [tipo, setTipo] = useState<'general' | 'refrigerada'>('general');
@@ -80,3 +81,6 @@ export function DialogoViabilidad({ abierto, onAbierto }: { abierto: boolean; on
     </Dialog>
   );
 }
+
+/** Cada vez que se abren, estos formularios empiezan limpios. */
+export const DialogoViabilidad = limpioAlAbrir(DialogoViabilidadFormulario);

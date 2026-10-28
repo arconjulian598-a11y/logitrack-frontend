@@ -1,3 +1,4 @@
+import { limpioAlAbrir } from '@/lib/limpioAlAbrir';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -65,7 +66,7 @@ function aTexto(v: unknown): string {
   return n === null ? '' : String(n);
 }
 
-export function DialogoVehiculo({
+function DialogoVehiculoFormulario({
   abierto,
   onAbierto,
   vehiculo,
@@ -292,3 +293,6 @@ export function DialogoVehiculo({
     </Dialog>
   );
 }
+
+/** Cada vez que se abren, estos formularios empiezan limpios. */
+export const DialogoVehiculo = limpioAlAbrir(DialogoVehiculoFormulario);

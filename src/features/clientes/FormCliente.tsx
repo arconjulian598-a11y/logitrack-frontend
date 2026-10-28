@@ -1,3 +1,4 @@
+import { limpioAlAbrir } from '@/lib/limpioAlAbrir';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router';
@@ -25,7 +26,7 @@ const esquema = z.object({
 });
 type Valores = z.infer<typeof esquema>;
 
-export function DialogoCliente({ abierto, onAbierto, cliente }: { abierto: boolean; onAbierto: (v: boolean) => void; cliente?: Cliente }) {
+function DialogoClienteFormulario({ abierto, onAbierto, cliente }: { abierto: boolean; onAbierto: (v: boolean) => void; cliente?: Cliente }) {
   const edicion = !!cliente;
   const navigate = useNavigate();
   const form = useForm<Valores>({
@@ -102,3 +103,6 @@ export function DialogoCliente({ abierto, onAbierto, cliente }: { abierto: boole
     </Dialog>
   );
 }
+
+/** Cada vez que se abren, estos formularios empiezan limpios. */
+export const DialogoCliente = limpioAlAbrir(DialogoClienteFormulario);

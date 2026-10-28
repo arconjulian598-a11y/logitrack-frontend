@@ -43,7 +43,17 @@ function CambiarEstado({ d }: { d: DeclaracionAduanera }) {
         {opciones
           .filter((o) => o.e !== d.estado)
           .map((o) => (
-            <Button key={o.e} size="sm" variant={o.e === 'aprobado' ? 'primary' : o.e === 'retenido' ? 'danger-outline' : 'secondary'} onClick={() => setDestino(o.e)}>
+            <Button
+              key={o.e}
+              size="sm"
+              variant={o.e === 'aprobado' ? 'primary' : o.e === 'retenido' ? 'danger-outline' : 'secondary'}
+              onClick={() => {
+                // cada vez que se abre, empieza limpio
+                setMotivo('');
+                a.reset();
+                setDestino(o.e);
+              }}
+            >
               {o.icono} {o.etiqueta}
             </Button>
           ))}

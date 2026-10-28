@@ -1,3 +1,4 @@
+import { limpioAlAbrir } from '@/lib/limpioAlAbrir';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { History, Pencil, RotateCw } from 'lucide-react';
 import { useState } from 'react';
@@ -27,7 +28,7 @@ const esquema = z.object({
   hora_estimada_llegada: z.string(),
 });
 
-function Recalcular({ ruta, abierto, onAbierto }: { ruta: Ruta; abierto: boolean; onAbierto: (v: boolean) => void }) {
+function RecalcularFormulario({ ruta, abierto, onAbierto }: { ruta: Ruta; abierto: boolean; onAbierto: (v: boolean) => void }) {
   const form = useForm({
     resolver: zodResolver(esquema),
     defaultValues: {
@@ -185,3 +186,6 @@ export default function RutaDetallePage() {
     </>
   );
 }
+
+/** Cada vez que se abren, estos formularios empiezan limpios. */
+const Recalcular = limpioAlAbrir(RecalcularFormulario);

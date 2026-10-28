@@ -181,7 +181,15 @@ function PorReembolsar() {
       id: 'accion',
       titulo: <span className="sr-only">Acción</span>,
       celda: (p) => (
-        <Button size="sm" onClick={() => setElegido(p)}>
+        <Button
+          size="sm"
+          onClick={() => {
+            // cada vez que se abre, empieza limpio
+            setNota('');
+            a.reset();
+            setElegido(p);
+          }}
+        >
           <RotateCcw /> Reembolsar
         </Button>
       ),

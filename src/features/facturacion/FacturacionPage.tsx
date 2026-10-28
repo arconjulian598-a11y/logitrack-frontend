@@ -193,7 +193,10 @@ function Facturas({ nombre }: { nombre: (c: string) => string }) {
       </div>
       <ConfirmDialog
         abierto={cerrar}
-        onAbierto={setCerrar}
+        onAbierto={(v) => {
+          if (!v) cierre.reset(); // al volver a abrir no queda el error anterior
+          setCerrar(v);
+        }}
         titulo={`Cerrar el periodo ${periodo}`}
         confirmar="Cerrar periodo"
         onConfirmar={() => cierre.mutate()}

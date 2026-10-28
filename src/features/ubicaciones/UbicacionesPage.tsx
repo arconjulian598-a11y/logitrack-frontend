@@ -1,3 +1,4 @@
+import { limpioAlAbrir } from '@/lib/limpioAlAbrir';
 import { usePuede } from '@/app/auth';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { LatLngBoundsExpression } from 'leaflet';
@@ -44,7 +45,7 @@ function ClicEnMapa({ onClic }: { onClic: (lat: number, lng: number) => void }) 
   return null;
 }
 
-function DialogoUbicacion({ abierto, onAbierto }: { abierto: boolean; onAbierto: (v: boolean) => void }) {
+function DialogoUbicacionFormulario({ abierto, onAbierto }: { abierto: boolean; onAbierto: (v: boolean) => void }) {
   const form = useForm<Valores>({
     resolver: zodResolver(esquema),
     defaultValues: { nombre: '', departamento: '', pais: 'Colombia', codigo_pais: 'CO', latitud: '', longitud: '', tipo: 'ciudad', codigo: '' },
@@ -328,3 +329,6 @@ export default function UbicacionesPage() {
     </>
   );
 }
+
+/** Cada vez que se abren, estos formularios empiezan limpios. */
+const DialogoUbicacion = limpioAlAbrir(DialogoUbicacionFormulario);

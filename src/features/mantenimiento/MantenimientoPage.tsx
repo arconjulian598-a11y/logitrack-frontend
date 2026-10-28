@@ -1,3 +1,4 @@
+import { limpioAlAbrir } from '@/lib/limpioAlAbrir';
 import { usePuede } from '@/app/auth';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CalendarPlus, Cpu, Plus, Wrench } from 'lucide-react';
@@ -50,7 +51,7 @@ const esquemaIntervencion = z.object({
   kilometraje_en_servicio: z.string().trim().refine((v) => v === '' || (aNumero(v) ?? -1) >= 0, { error: 'Debe ser 0 o más' }),
 });
 
-function DialogoPrograma({ vehiculoId, abierto, onAbierto }: { vehiculoId: string; abierto: boolean; onAbierto: (v: boolean) => void }) {
+function DialogoProgramaFormulario({ vehiculoId, abierto, onAbierto }: { vehiculoId: string; abierto: boolean; onAbierto: (v: boolean) => void }) {
   const form = useForm({ resolver: zodResolver(esquemaPrograma), defaultValues: { tipo: '', fecha_vencimiento: '', kilometraje_vencimiento: '', prioridad: 'media' } });
   const a = useAccion({
     fn: (v: z.infer<typeof esquemaPrograma>) =>
@@ -114,7 +115,7 @@ function DialogoPrograma({ vehiculoId, abierto, onAbierto }: { vehiculoId: strin
   );
 }
 
-function DialogoIntervencion({ vehiculoId, abierto, onAbierto }: { vehiculoId: string; abierto: boolean; onAbierto: (v: boolean) => void }) {
+function DialogoIntervencionFormulario({ vehiculoId, abierto, onAbierto }: { vehiculoId: string; abierto: boolean; onAbierto: (v: boolean) => void }) {
   const form = useForm({ resolver: zodResolver(esquemaIntervencion), defaultValues: { tipo: '', costo: '', taller: '', kilometraje_en_servicio: '' } });
   const v = useVehiculo(vehiculoId);
   const a = useAccion({
@@ -382,3 +383,7 @@ export default function MantenimientoPage() {
     </>
   );
 }
+
+/** Cada vez que se abren, estos formularios empiezan limpios. */
+const DialogoPrograma = limpioAlAbrir(DialogoProgramaFormulario);
+const DialogoIntervencion = limpioAlAbrir(DialogoIntervencionFormulario);

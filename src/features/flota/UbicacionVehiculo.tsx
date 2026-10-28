@@ -1,3 +1,4 @@
+import { limpioAlAbrir } from '@/lib/limpioAlAbrir';
 import { MapPin, MapPinOff } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -44,7 +45,7 @@ export function EtiquetaUbicacion({ v }: { v: Vehiculo }) {
  * Fija la ubicación base de un vehículo eligiéndola de la lista de ubicaciones guardadas
  * (PUT /vehiculos/{id}/ubicacion). Solo gestor de flota y administrador.
  */
-export function DialogoUbicacionVehiculo({
+function DialogoUbicacionVehiculoFormulario({
   vehiculo,
   onCerrar,
 }: {
@@ -154,3 +155,6 @@ export function BotonEstablecerUbicacion({
     </Button>
   );
 }
+
+/** Cada vez que se abren, estos formularios empiezan limpios. */
+export const DialogoUbicacionVehiculo = limpioAlAbrir(DialogoUbicacionVehiculoFormulario, (p) => !!p.vehiculo);

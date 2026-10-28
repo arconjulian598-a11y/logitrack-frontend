@@ -1,3 +1,4 @@
+import { limpioAlAbrir } from '@/lib/limpioAlAbrir';
 import { Pencil, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useUsuario } from '@/app/auth';
@@ -29,7 +30,7 @@ const TONO_ROL: Record<Rol, 'neutral' | 'info' | 'primary' | 'warn'> = {
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-function DialogoCrear({ abierto, onAbierto }: { abierto: boolean; onAbierto: (v: boolean) => void }) {
+function DialogoCrearFormulario({ abierto, onAbierto }: { abierto: boolean; onAbierto: (v: boolean) => void }) {
   const [email, setEmail] = useState('');
   const [nombre, setNombre] = useState('');
   const [password, setPassword] = useState('');
@@ -119,7 +120,7 @@ function DialogoCrear({ abierto, onAbierto }: { abierto: boolean; onAbierto: (v:
   );
 }
 
-function DialogoEditar({ usuario, onCerrar }: { usuario: Usuario | null; onCerrar: () => void }) {
+function DialogoEditarFormulario({ usuario, onCerrar }: { usuario: Usuario | null; onCerrar: () => void }) {
   const yo = useUsuario();
   const [nombre, setNombre] = useState(usuario?.nombre ?? '');
   const [password, setPassword] = useState('');
@@ -274,3 +275,7 @@ export default function UsuariosPage() {
     </>
   );
 }
+
+/** Cada vez que se abren, estos formularios empiezan limpios. */
+const DialogoCrear = limpioAlAbrir(DialogoCrearFormulario);
+const DialogoEditar = limpioAlAbrir(DialogoEditarFormulario, (p) => !!p.usuario);

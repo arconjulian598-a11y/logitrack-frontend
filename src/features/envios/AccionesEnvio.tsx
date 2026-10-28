@@ -1,3 +1,4 @@
+import { limpioAlAbrir } from '@/lib/limpioAlAbrir';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { AlertTriangle, Ban, CalendarClock, CheckCheck, ChevronDown, PlayCircle, RotateCw, Undo2 } from 'lucide-react';
 import { useState } from 'react';
@@ -68,7 +69,7 @@ function ErrorPedido({ error }: { error: unknown }) {
   return <ErrorFormulario error={error} />;
 }
 
-function DialogoCancelar({ envio, abierto, onAbierto }: { envio: Envio; abierto: boolean; onAbierto: (v: boolean) => void }) {
+function DialogoCancelarFormulario({ envio, abierto, onAbierto }: { envio: Envio; abierto: boolean; onAbierto: (v: boolean) => void }) {
   const [motivo, setMotivo] = useState('');
   const a = useAccion({
     fn: () => api.envios.cancelar(envio.id, vacioANull(motivo)),
@@ -109,7 +110,7 @@ function DialogoCancelar({ envio, abierto, onAbierto }: { envio: Envio; abierto:
   );
 }
 
-function DialogoReprogramar({ envio, abierto, onAbierto }: { envio: Envio; abierto: boolean; onAbierto: (v: boolean) => void }) {
+function DialogoReprogramarFormulario({ envio, abierto, onAbierto }: { envio: Envio; abierto: boolean; onAbierto: (v: boolean) => void }) {
   const inicial = envio.fecha_programada ? aInputLocal(new Date(envio.fecha_programada)) : '';
   const [fecha, setFecha] = useState(inicial);
   const [motivo, setMotivo] = useState('');
@@ -177,7 +178,7 @@ const esquemaPod = z.object({
   url_foto: z.string().trim(),
 });
 
-function DialogoEntrega({ envio, abierto, onAbierto }: { envio: Envio; abierto: boolean; onAbierto: (v: boolean) => void }) {
+function DialogoEntregaFormulario({ envio, abierto, onAbierto }: { envio: Envio; abierto: boolean; onAbierto: (v: boolean) => void }) {
   const form = useForm({ resolver: zodResolver(esquemaPod), defaultValues: { nombre_receptor: '', url_firma: '', url_foto: '' } });
   const a = useAccion({
     fn: (v: z.infer<typeof esquemaPod>) =>
@@ -226,7 +227,7 @@ function DialogoEntrega({ envio, abierto, onAbierto }: { envio: Envio; abierto: 
   );
 }
 
-function DialogoEstado({
+function DialogoEstadoFormulario({
   envio,
   destino,
   onCerrar,
@@ -350,3 +351,9 @@ export function AccionesEnvio({ envio }: { envio: Envio }) {
     </div>
   );
 }
+
+/** Cada vez que se abren, estos formularios empiezan limpios. */
+const DialogoCancelar = limpioAlAbrir(DialogoCancelarFormulario);
+const DialogoReprogramar = limpioAlAbrir(DialogoReprogramarFormulario);
+const DialogoEntrega = limpioAlAbrir(DialogoEntregaFormulario);
+const DialogoEstado = limpioAlAbrir(DialogoEstadoFormulario, (p) => !!p.destino);

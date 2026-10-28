@@ -1,3 +1,4 @@
+import { limpioAlAbrir } from '@/lib/limpioAlAbrir';
 import { usePuede } from '@/app/auth';
 import { Calculator, PlayCircle, RotateCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -85,7 +86,7 @@ function RutasEnvio() {
   );
 }
 
-function CalcularRuta({ abierto, onAbierto }: { abierto: boolean; onAbierto: (v: boolean) => void }) {
+function CalcularRutaFormulario({ abierto, onAbierto }: { abierto: boolean; onAbierto: (v: boolean) => void }) {
   const [o, setO] = useState<Ubicacion | null>(null);
   const [d, setD] = useState<Ubicacion | null>(null);
   const navigate = useNavigate();
@@ -327,3 +328,6 @@ export default function RutasPage() {
     </>
   );
 }
+
+/** Cada vez que se abren, estos formularios empiezan limpios. */
+const CalcularRuta = limpioAlAbrir(CalcularRutaFormulario);

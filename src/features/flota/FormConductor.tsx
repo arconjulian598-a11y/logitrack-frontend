@@ -1,3 +1,4 @@
+import { limpioAlAbrir } from '@/lib/limpioAlAbrir';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CheckCircle2, XCircle } from 'lucide-react';
 import { useState } from 'react';
@@ -88,7 +89,7 @@ function SelectorCategorias({ valor, onCambio }: { valor: string[]; onCambio: (v
   );
 }
 
-export function DialogoConductor({ abierto, onAbierto, conductor }: { abierto: boolean; onAbierto: (v: boolean) => void; conductor?: Conductor }) {
+function DialogoConductorFormulario({ abierto, onAbierto, conductor }: { abierto: boolean; onAbierto: (v: boolean) => void; conductor?: Conductor }) {
   const edicion = !!conductor;
   const conductores = useConductores();
   const ocupados = new Set((conductores.data ?? []).map((c) => c.vehiculo_id).filter(Boolean));
@@ -193,7 +194,7 @@ export function DialogoConductor({ abierto, onAbierto, conductor }: { abierto: b
   );
 }
 
-export function DialogoVincular({ abierto, onAbierto, conductor }: { abierto: boolean; onAbierto: (v: boolean) => void; conductor: Conductor }) {
+function DialogoVincularFormulario({ abierto, onAbierto, conductor }: { abierto: boolean; onAbierto: (v: boolean) => void; conductor: Conductor }) {
   const conductores = useConductores();
   const ocupados = new Set((conductores.data ?? []).map((c) => c.vehiculo_id).filter(Boolean));
   const [vehiculoId, setVehiculoId] = useState<string | null>(null);
@@ -231,3 +232,7 @@ export function DialogoVincular({ abierto, onAbierto, conductor }: { abierto: bo
     </Dialog>
   );
 }
+
+/** Cada vez que se abren, estos formularios empiezan limpios. */
+export const DialogoConductor = limpioAlAbrir(DialogoConductorFormulario);
+export const DialogoVincular = limpioAlAbrir(DialogoVincularFormulario);
